@@ -1,0 +1,304 @@
+# 結單與審核完整範例（IntelliJ HTTP Client / VS Code REST Client）
+# baseUrl 包含 application.properties 設定的 /api；連接埠依實際環境調整。
+# 預設打頭機；搓牙機請將 resource 改為 workOrderThreadingMachine、
+# entity 改為 WorkOrderThreadingMachine。所有流程共用相同請求格式。
+#
+# 執行前：
+# 1. 確認新增欄位及舊狀態轉換 SQL 已套用。
+# 2. 使用測試資料；各情境 ID 須為不同的、尚未開工且 orderClosed=0 的派工。
+# 3. 可使用下方新增派工及查詢取得 ID；workOrderCode 是工單資料表 id。
+# 4. endAt 是範例時間，每次結單前改成實際結束時間，必須 >= 該派工 startedAt。
+# 5. 逐步執行所需情境，不要直接 Run All；重跑需換新的派工 ID。
+#
+# orderClosed：0 未結單 / 1 正常 / 2 異常。
+# approved：正常結單直接 true；異常結單 null 待審 / true 通過 / false 退回。
+# POST 流程成功回傳 HTTP 200；新增派工成功回傳 HTTP 201。
+# 流程回應不含完整資料，請用後續 GET 確認資料。
+# review 的 orderClosed 可省略（保留原類型），approved/reviewer/opinion 必填。
+# opinion 相容舊版 remark；兩者皆有時採用非空白的 opinion。
+# 審核不覆寫原結單 reason、remark；審核資料存入 reviewer、approved、opinion。
+# 已審核不可重複審核；退回後需先 close 重新送審。
+# close 會清除 reviewer/opinion；approved 依正常 true、異常 null 設定，歷史紀錄保留原值。
+
+@baseUrl = http://localhost:8080/api
+@resource = workOrderHeadingMachine
+@entity = WorkOrderHeadingMachine
+@workOrderId = 1
+@machineId = 1
+@materialId = 1
+@normalId = 101
+@abnormalId = 102
+@abnormalToNormalId = 103
+@normalToAbnormalId = 104
+@resubmitId = 105
+@endAt = 2026-10-16T18:00:00+08:00
+
+### 準備（選用）：新增一筆派工；多個情境請使用不同且有效的工單／機台組合
+POST {{baseUrl}}/{{resource}}/add{{entity}}
+Content-Type: application/json
+
+{
+  "workOrderCode": {{workOrderId}},
+  "machineId": {{machineId}},
+  "materialId": {{materialId}},
+  "employee_code": "E001",
+  "targetQuantity": 1000,
+  "targetUpOffsetQuantity": 50,
+  "targetDownOffsetQuantity": 50,
+  "currentQuantity": 0,
+  "previousQuantity": 0,
+  "updateQuantity": 0,
+  "orderClosed": 0,
+  "remark": "結單流程測試",
+  "oee": 0
+}
+
+### 準備：查詢派工列表，將實際 id 填入上方各情境變數
+GET {{baseUrl}}/{{resource}}/get{{entity}}
+Accept: application/json
+
+### A 正常結單直接完成：1. 開工
+POST {{baseUrl}}/{{resource}}/{{normalId}}/production/start
+
+
+### A：2. 生產狀態更新（選用）
+POST {{baseUrl}}/{{resource}}/{{normalId}}/production/status
+Content-Type: application/json
+
+{
+  "productionStatus": "等待",
+  "reason": "等待品質確認"
+}
+
+### A：3. 恢復生產（選用）
+POST {{baseUrl}}/{{resource}}/{{normalId}}/production/status
+Content-Type: application/json
+
+{
+  "productionStatus": "生產中"
+}
+
+### A 正常結單直接完成：提交結單
+# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+POST {{baseUrl}}/{{resource}}/{{normalId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 1,
+  "endAt": "{{endAt}}",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "remark": "本次結單備註"
+}
+
+### A 正常結單直接完成：確認結單狀態
+# 預期：orderClosed=1, approved=true, reviewer=null, opinion=null
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{normalId}}
+Accept: application/json
+
+### B 異常結單 → 維持異常並通過：1. 開工
+POST {{baseUrl}}/{{resource}}/{{abnormalId}}/production/start
+
+
+### B 異常結單 → 維持異常並通過：提交結單
+# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+POST {{baseUrl}}/{{resource}}/{{abnormalId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "endAt": "{{endAt}}",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "reason": "產量未達標，提前結束生產",
+  "remark": "本次結單備註"
+}
+
+### B 異常結單 → 維持異常並通過：確認結單狀態
+# 預期：orderClosed=2, approved=null, reviewer=null, opinion=null
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{abnormalId}}
+Accept: application/json
+
+### B 異常結單 → 維持異常並通過：審核
+POST {{baseUrl}}/{{resource}}/{{abnormalId}}/production/review
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "approved": true,
+  "reviewer": "E002",
+  "opinion": "確認資料完整，審核通過"
+}
+
+### B 異常結單 → 維持異常並通過：確認結果
+# 預期：orderClosed=2, approved=true, reviewer=E002，opinion 為上述審核意見
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{abnormalId}}
+Accept: application/json
+
+### C 異常結單 → 審核改判正常：1. 開工
+POST {{baseUrl}}/{{resource}}/{{abnormalToNormalId}}/production/start
+
+
+### C 異常結單 → 審核改判正常：提交結單
+# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+POST {{baseUrl}}/{{resource}}/{{abnormalToNormalId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "endAt": "{{endAt}}",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "reason": "產量未達標，提前結束生產",
+  "remark": "本次結單備註"
+}
+
+### C 異常結單 → 審核改判正常：確認結單狀態
+# 預期：orderClosed=2, approved=null, reviewer=null, opinion=null
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{abnormalToNormalId}}
+Accept: application/json
+
+### C 異常結單 → 審核改判正常：審核
+POST {{baseUrl}}/{{resource}}/{{abnormalToNormalId}}/production/review
+Content-Type: application/json
+
+{
+  "orderClosed": 1,
+  "approved": true,
+  "reviewer": "E002",
+  "opinion": "查核後符合正常結單條件，改判正常並通過"
+}
+
+### C 異常結單 → 審核改判正常：確認結果
+# 預期：orderClosed=1, approved=true, reviewer=E002，opinion 為上述審核意見
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{abnormalToNormalId}}
+Accept: application/json
+
+### D 正常結單 → 直接改成異常：1. 開工
+POST {{baseUrl}}/{{resource}}/{{normalToAbnormalId}}/production/start
+
+
+### D 正常結單 → 直接改成異常：提交結單
+# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+POST {{baseUrl}}/{{resource}}/{{normalToAbnormalId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 1,
+  "endAt": "{{endAt}}",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "remark": "本次結單備註"
+}
+
+### D 正常結單 → 直接改成異常：確認結單狀態
+# 預期：orderClosed=1, approved=true, reviewer=null, opinion=null
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{normalToAbnormalId}}
+Accept: application/json
+
+### D 正常結單 → 直接改成異常：重新提交異常結單
+POST {{baseUrl}}/{{resource}}/{{normalToAbnormalId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "endAt": "{{endAt}}",
+  "employee_code": "102",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "reason": "查核發現異常",
+  "remark": "正常結單改為異常結單"
+}
+
+### D 正常結單 → 直接改成異常：確認結果
+# 預期：orderClosed=2, approved=null, reviewer=null, opinion=null
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{normalToAbnormalId}}
+Accept: application/json
+
+### E 退回再送審：1. 開工
+POST {{baseUrl}}/{{resource}}/{{resubmitId}}/production/start
+
+
+### E：2. 異常結單
+POST {{baseUrl}}/{{resource}}/{{resubmitId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "endAt": "{{endAt}}",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "reason": "設備異常停止生產",
+  "remark": "提交異常結單"
+}
+
+### E：3. 審核退回（省略 orderClosed，保留異常類型）
+POST {{baseUrl}}/{{resource}}/{{resubmitId}}/production/review
+Content-Type: application/json
+
+{
+  "approved": false,
+  "reviewer": "E002",
+  "opinion": "物料損耗數量有誤，請更正後重新送審"
+}
+
+### E：4. 確認退回
+# 預期：orderClosed=2, approved=false
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{resubmitId}}
+Accept: application/json
+
+### E：5. 修正資料並重新送審（也可將 orderClosed 改為 1）
+# 更新 endAt；退回後不用再呼叫 start。
+POST {{baseUrl}}/{{resource}}/{{resubmitId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "endAt": "{{endAt}}",
+  "materialLoss": 8,
+  "remainingMaterial": 17,
+  "reason": "設備異常停止生產",
+  "remark": "已重新核對物料數量"
+}
+
+### E：6. 確認重新待審
+# 預期：orderClosed=2, approved=null, reviewer=null, opinion=null
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{resubmitId}}
+Accept: application/json
+
+### E：7. 再次審核通過
+POST {{baseUrl}}/{{resource}}/{{resubmitId}}/production/review
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "approved": true,
+  "reviewer": "E002",
+  "opinion": "修正後數量正確，審核通過"
+}
+
+### E：8. 確認最終結果
+# 預期：orderClosed=2, approved=true
+GET {{baseUrl}}/{{resource}}/get{{entity}}/{{resubmitId}}
+Accept: application/json
+
+# 常見錯誤：
+# HTTP 400：orderClosed 傳 3/4、結束時間早於開工、物料數量缺漏或負值、
+#           異常結單缺少 reason/remark、審核缺少 approved/reviewer/opinion。
+# HTTP 404：派工 id 不存在。
+# HTTP 409：未開工就結單、未帶 reviewer 的異常結單待審或已通過又提交結單、未結單或已審核又執行審核。
+# 正常結單直接完成（approved=true），無需審核；可使用 close 的 orderClosed=2 改成異常結單。
+# 改成異常結單時需提供 reason/remark，並重新進入待審核（approved=null）。
+# 例外：已結單帶 reviewer、approved、opinion 可直接改判並保存審核結果；省略的結單資料保留原值。
+
+### 審核人員再次結單（先確認 normalToAbnormalId 已開工且已結單）
+POST {{baseUrl}}/{{resource}}/{{normalToAbnormalId}}/production/close
+Content-Type: application/json
+
+{
+  "approved": true,
+  "reviewer": "102",
+  "orderClosed": 2,
+  "opinion": "審核後判定為異常結單"
+}
+

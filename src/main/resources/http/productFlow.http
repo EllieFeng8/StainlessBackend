@@ -1,0 +1,424 @@
+# 生產流程：首件完成 → 核對料號 → 正式生產 → 狀態變更 → 結單 → 異常審核
+# JetBrains HTTP Client，依製程選 A/B 分支逐支執行，勿 Run All。
+# JSON 支援 camelCase；新 production API 也支援本檔使用的 snake_case 欄位。
+# order_closed：0 未結單 / 1 正常 / 2 異常待審 / 3 異常通過 / 4 異常退回。
+# 異常審核不限制角色；reviewer 是填報者，不代表已驗證身分。
+# 退回不會重新開工，補正後以 close(order_closed=2) 重送。
+# 開工前需有符合工單、機台、物料的首件紀錄（現有模型沒有合格旗標）。
+# 工單 id、機台 id、物料 id 請填實際資料；派工 id 由核對回應取得，僅唯一符合才自動保存。
+@baseUrl = http://localhost:8080/api
+@workOrderId = 57
+@headMachineId = 4
+@threadMachineId = 12
+@headMaterialId = 2
+@threadMaterialId = 3
+# 結束時間需改為實際時間，且不得早於 startedAt。
+@endAt = 2026-10-14T18:00:00+08:00
+@reviewer = 102
+
+### A1 核對工單＋機台＋物料；Service 回傳唯一派工 ID；無符合 404，多筆 409
+GET {{baseUrl}}/workOrderHeadingMachine/production/verify?workOrderId={{workOrderId}}&headMachineId={{headMachineId}}&materialId={{headMaterialId}}
+Accept: application/json
+
+> {%
+    client.global.clear("headProductionAssignmentId");
+    client.test("核對派工成功", function () {
+        client.assert(response.status === 200, "核對失敗，請確認工單、機台及物料");
+    });
+    if (response.status === 200) {
+        client.global.set("headProductionAssignmentId", response.body.headProductionAssignmentId);
+    }
+%}
+
+### A2 開始正式生產（再次核對料號及首件）；成功 200，不符 400，未首件或已開工 409
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/start
+Accept: application/json
+Content-Type: application/json
+
+{
+  "workOrderId": {{workOrderId}},
+  "machineId": {{headMachineId}},
+  "materialId": {{headMaterialId}}
+}
+
+### A3.1 選用：換料；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "換料",
+  "reason": "換料原因（請填實際情況）"
+}
+
+### A3.2 選用：換針；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "換針",
+  "reason": "換針原因（請填實際情況）"
+}
+
+### A3.3 選用：目標產量修改；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "目標產量修改",
+  "reason": "目標產量修改原因（請填實際情況）",
+  "target_quantity": 12000
+}
+
+### A3.4 選用：待料；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待料",
+  "reason": "待料原因（請填實際情況）"
+}
+
+### A3.5 選用：待單；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待單",
+  "reason": "待單原因（請填實際情況）"
+}
+
+### A3.6 選用：待沖膜；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待沖膜",
+  "reason": "待沖膜原因（請填實際情況）"
+}
+
+### A3.7 選用：待維修；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待維修",
+  "reason": "待維修原因（請填實際情況）"
+}
+
+### A3.8 選用：待調車；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待調車",
+  "reason": "待調車原因（請填實際情況）"
+}
+
+### A3.9 選用：無法續做；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "無法續做",
+  "reason": "無法續做原因（請填實際情況）"
+}
+
+### A3.10 選用：模具牙板異常；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "模具牙板異常",
+  "reason": "模具牙板異常原因（請填實際情況）"
+}
+
+### A3.11 選用：盤元異常換料續做；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "盤元異常換料續做",
+  "reason": "盤元異常換料續做原因（請填實際情況）"
+}
+
+### A3.12 選用：正式生產；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "正式生產",
+  "reason": "正式生產原因（請填實際情況）"
+}
+
+### A4a 正常結單（與 4b 擇一）；成功 200
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/close
+Accept: application/json
+Content-Type: application/json
+
+{
+  "order_closed": 1,
+  "end_at": "{{endAt}}",
+  "material_loss": 2.5,
+  "remaining_material": 12,
+  "remark": "正常完成"
+}
+
+### A4b 異常結單／正常改異常／退回後補正；成功 200，原因備註缺漏 400
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/close
+Accept: application/json
+Content-Type: application/json
+
+{
+  "order_closed": 2,
+  "reason": "模具牙板異常",
+  "remark": "牙板損壞，未達目標產量，申請異常結單",
+  "end_at": "{{endAt}}",
+  "material_loss": 3.5,
+  "remaining_material": 19
+}
+
+### A5a 異常審核通過（與 5b 擇一）；成功 200，非待審 409
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/review
+Accept: application/json
+Content-Type: application/json
+
+{
+  "approved": true,
+  "reviewer": "{{reviewer}}",
+  "remark": "已確認異常原因、耗損與餘料"
+}
+
+### A5b 異常審核退回；補正後重送 4b
+POST {{baseUrl}}/workOrderHeadingMachine/{{headProductionAssignmentId}}/production/review
+Accept: application/json
+Content-Type: application/json
+
+{
+  "approved": false,
+  "reviewer": "{{reviewer}}",
+  "remark": "請補充異常原因及餘料盤點結果"
+}
+
+### A6 查結果，核對 orderClosed / endAt / materialLoss / remainingMaterial
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine/{{headProductionAssignmentId}}
+Accept: application/json
+
+### B1 核對工單＋機台＋物料；無符合 404
+GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine?workOrderId={{workOrderId}}&threadMachineId={{threadMachineId}}&materialId={{threadMaterialId}}
+Accept: application/json
+
+> {%
+    client.global.clear("threadProductionAssignmentId");
+    client.test("唯一符合的派工", function () {
+        client.assert(response.status === 200 && Array.isArray(response.body) && response.body.length === 1, "無符合或多筆派工，請人工確認");
+    });
+    if (response.status === 200 && Array.isArray(response.body) && response.body.length === 1) {
+        client.global.set("threadProductionAssignmentId", response.body[0].id);
+    }
+%}
+
+### B2 開始正式生產（再次核對料號及首件）；成功 200，不符 400，未首件或已開工 409
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/start
+Accept: application/json
+Content-Type: application/json
+
+{
+  "workOrderId": {{workOrderId}},
+  "machineId": {{threadMachineId}},
+  "materialId": {{threadMaterialId}}
+}
+
+### B3.1 選用：換料；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "換料",
+  "reason": "換料原因（請填實際情況）"
+}
+
+### B3.2 選用：換針；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "換針",
+  "reason": "換針原因（請填實際情況）"
+}
+
+### B3.3 選用：目標產量修改；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "目標產量修改",
+  "reason": "目標產量修改原因（請填實際情況）",
+  "target_quantity": 12000
+}
+
+### B3.4 選用：待料；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待料",
+  "reason": "待料原因（請填實際情況）"
+}
+
+### B3.5 選用：待單；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待單",
+  "reason": "待單原因（請填實際情況）"
+}
+
+### B3.6 選用：待沖膜；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待沖膜",
+  "reason": "待沖膜原因（請填實際情況）"
+}
+
+### B3.7 選用：待維修；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待維修",
+  "reason": "待維修原因（請填實際情況）"
+}
+
+### B3.8 選用：待調車；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "待調車",
+  "reason": "待調車原因（請填實際情況）"
+}
+
+### B3.9 選用：無法續做；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "無法續做",
+  "reason": "無法續做原因（請填實際情況）"
+}
+
+### B3.10 選用：模具牙板異常；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "模具牙板異常",
+  "reason": "模具牙板異常原因（請填實際情況）"
+}
+
+### B3.11 選用：盤元異常換料續做；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "盤元異常換料續做",
+  "reason": "盤元異常換料續做原因（請填實際情況）"
+}
+
+### B3.12 選用：正式生產；成功 200（等待請選具體待料／待單等狀態）
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/status
+Accept: application/json
+Content-Type: application/json
+
+{
+  "production_status": "正式生產",
+  "reason": "正式生產原因（請填實際情況）"
+}
+
+### B4a 正常結單（與 4b 擇一）；成功 200
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/close
+Accept: application/json
+Content-Type: application/json
+
+{
+  "order_closed": 1,
+  "end_at": "{{endAt}}",
+  "material_loss": 2.5,
+  "remaining_material": 12,
+  "remark": "正常完成"
+}
+
+### B4b 異常結單／正常改異常／退回後補正；成功 200，原因備註缺漏 400
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/close
+Accept: application/json
+Content-Type: application/json
+
+{
+  "order_closed": 2,
+  "reason": "模具牙板異常",
+  "remark": "牙板損壞，未達目標產量，申請異常結單",
+  "end_at": "{{endAt}}",
+  "material_loss": 3.5,
+  "remaining_material": 15
+}
+
+### B5a 異常審核通過（與 5b 擇一）；成功 200，非待審 409
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/review
+Accept: application/json
+Content-Type: application/json
+
+{
+  "approved": true,
+  "reviewer": "{{reviewer}}",
+  "remark": "已確認異常原因、耗損與餘料"
+}
+
+### B5b 異常審核退回；補正後重送 4b
+POST {{baseUrl}}/workOrderThreadingMachine/{{threadProductionAssignmentId}}/production/review
+Accept: application/json
+Content-Type: application/json
+
+{
+  "approved": false,
+  "reviewer": "{{reviewer}}",
+  "remark": "請補充異常原因及餘料盤點結果"
+}
+
+### B6 查結果，核對 orderClosed / endAt / materialLoss / remainingMaterial
+GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine/{{threadProductionAssignmentId}}
+Accept: application/json
+
+### 查歷史：流程更新與歷史同一交易；含派工 id、審核人及意見
+GET {{baseUrl}}/historyLog/getHistoryLogByWorkOrder?workOrderCode={{workOrderId}}
+Accept: application/json
+
+# 注意：換料狀態只記錄停機／換料事件，不會變更派工的 materialId。
+# 若實際改用另一物料，請建立正確的新物料派工並完成對應首件後開工。
+# 通用新增／修改不得直接寫 productionStatus、startedAt、endAt、耗損餘料或結單狀態。
+# 已開工派工的通用修改／刪除受限，生產狀態與目標產量改用本檔 API。

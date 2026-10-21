@@ -1,0 +1,160 @@
+# QC：掃描工單 -> 掃描物料 -> 輸入首件檢測 -> 儲存結束
+# 啟動專案後逐支執行。POST/PATCH 會寫入資料庫，請勿直接 Run All。
+@baseUrl = http://localhost:8080/api
+@workOrderCode = 1
+# 掃描工單回傳的 id，與 workOrderCode 不同。
+# workOrderId 由步驟 1 的回應自動設定，請先執行步驟 1。
+# 掃描物料回傳的 materialId，請換成實際值。
+@materialId = 3
+# 以下為佔位值：先查工單物料及機台關聯，再填入實際資料。
+@materialCode = 2
+@headMachineId = 9
+@threadMachineId = 12
+# 首件物料欄位為字串；請依資料庫實際關聯填入，勿直接假設等於掃描碼。
+@headMaterialId = 2
+@threadMaterialId = 3
+# 修改前，從首件查詢結果取得欲修改紀錄的 id。
+@firstTestId = 2
+
+### 1. 掃描工單：依工單編號查詢（不是資料庫 id），成功 200 / 查無 404
+GET {{baseUrl}}/workOrder/getWorkOrderByCode/{{workOrderCode}}
+Accept: application/json
+
+> {%
+    client.test("掃描工單成功", function () {
+        client.assert(response.status === 200, "工單不存在或查詢失敗");
+    });
+    if (response.status === 200 && response.body.id != null) {
+        client.global.set("workOrderId", response.body.id);
+    } else {
+        client.global.clear("workOrderId");
+    }
+%}
+
+# 後續 workOrderCode / work_order_code 是舊欄位名稱，值一律傳工單 id。
+### 2. 查工單所屬物料：確認掃描的 materialCode 在此清單內
+GET {{baseUrl}}/materialHistory/getMaterialHistoryByWorkOrder?workOrderCode={{workOrderId}}
+Accept: application/json
+
+### 3. 掃描物料：查物料履歷，成功 200 / 查無 404
+# 同碼若有多筆，目前只取第一筆；仍需以上一步確認工單關聯。
+GET {{baseUrl}}/materialHistory/getMaterialHistory/{{materialCode}}
+Accept: application/json
+
+### 4a. 打頭 工單機台物料比對：三個條件必須同時符合
+# 成功 200 回傳關聯陣列；無符合資料 404，message 為「工單、機台與物料對應關係不存在」。
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine?workOrderId={{workOrderId}}&headMachineId={{headMachineId}}&materialId={{materialId}}
+Accept: application/json
+
+### 4b. 搓牙 工單機台物料比對：三個條件必須同時符合
+# 成功 200 回傳關聯陣列；無符合資料 404，message 為「工單、機台與物料對應關係不存在」。
+GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine?workOrderId={{workOrderId}}&threadMachineId={{threadMachineId}}&materialId={{threadMaterialId}}
+Accept: application/json
+
+### 5a. 查看打頭機台資料（選用）
+GET {{baseUrl}}/headMachine/getMachine/{{headMachineId}}
+Accept: application/json
+
+### 5b. 查看搓牙機台資料（選用）
+GET {{baseUrl}}/threadMachine/getMachine/{{threadMachineId}}
+Accept: application/json
+
+### 6a. 打頭首件檢測：填妥實際量測值後儲存，與 6b 依製程選用
+# 首次 201、同工單再次提交 200；回傳 data.id、data.workOrderId、data.dateTime，保留另一製程欄位。
+POST {{baseUrl}}/firstTest/addFirstTest
+Content-Type: application/json
+Accept: application/json
+
+{
+  "work_order_code": {{workOrderId}},
+  "head_machineId": {{headMachineId}},
+  "head_material_id": "{{headMaterialId}}",
+  "heading_length": "10.00",
+  "head_dia": "8.00",
+  "head_angle_s1": "90",
+  "head_angle_s2": "90",
+  "punch_type_no": "TEST-PUNCH",
+  "punch_width": "4.00",
+  "punch_gauge_depth": "2.00",
+  "head_thickness_h1": "3.00",
+  "head_thickness_h2": "3.00",
+  "enlarged_shank_dia": "5.00",
+  "enlarged_length": "2.00"
+}
+
+### 6b. 搓牙首件檢測：填妥實際量測值後儲存
+# 首次 201、同工單再次提交 200；回傳 data.id、data.workOrderId、data.dateTime，保留另一製程欄位。
+POST {{baseUrl}}/firstTest/addFirstTest
+Content-Type: application/json
+Accept: application/json
+
+{
+  "work_order_code": {{workOrderId}},
+  "thread_machineId": {{threadMachineId}},
+  "thread_material_id": "{{threadMaterialId}}",
+  "thread_type": "M6",
+  "thread_pitch": "1.00",
+  "major_diameter_d1": "6.00",
+  "major_diameter_d2": "6.00",
+  "thread_angle": "60",
+  "thread_length": "20.00",
+  "oblique_tooth_length": "1.00",
+  "thread_tail_angle": "45",
+  "minor_diameter": "4.80",
+  "oblique_tooth_diameter": "5.00",
+  "overall_length": "25.00"
+}
+
+### 7a. 查看打頭機台首件紀錄，核對 workOrderCode（實際為工單 id）、物料及 dateTime
+GET {{baseUrl}}/firstTest/getFirstTestByMachine?headMachineId={{headMachineId}}
+Accept: application/json
+
+### 7b. 查看搓牙機台首件紀錄，核對 workOrderCode（實際為工單 id）、物料及 dateTime
+GET {{baseUrl}}/firstTest/getFirstTestByMachine?threadMachineId={{threadMachineId}}
+Accept: application/json
+
+### 7c. 查看全部首件紀錄（選用），取得需要修改的 id
+# 儲存 API 回傳 data.id，請填入 firstTestId；同工單打頭、搓牙共用此 id。
+GET {{baseUrl}}/firstTest/getFirstTest
+Accept: application/json
+
+### 8a. 修改打頭量測值（選用）：僅更新提供的非 null 欄位，成功 200
+PATCH {{baseUrl}}/firstTest/updateFirstTest/{{firstTestId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "heading_length": "19.05",
+  "head_dia": "8.02"
+}
+
+### 8b. 修改搓牙量測值（選用）：同工單與 8a 共用 firstTestId
+# 結束：6a 或 6b 儲存成功即完成；目前沒有獨立 QC 結束/簽核 API。
+PATCH {{baseUrl}}/firstTest/updateFirstTest/{{firstTestId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "major_diameter_d1": "6.01",
+  "overall_length": "29.05"
+}
+
+
+### 邊界測試：不存在的工單編號，預期 404（需確保此編號未建立）
+GET {{baseUrl}}/workOrder/getWorkOrderByCode/2147483647
+Accept: application/json
+
+### 邊界測試：工單編號不是整數，預期 400
+GET {{baseUrl}}/workOrder/getWorkOrderByCode/abc
+Accept: application/json
+
+### 打頭物料不符：預期 404（確認此 materialId 不存在）
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine?workOrderId={{workOrderId}}&headMachineId={{headMachineId}}&materialId=2147483647
+Accept: application/json
+
+### 搓牙物料不符：預期 404（確認此 materialId 不存在）
+GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine?workOrderId={{workOrderId}}&threadMachineId={{threadMachineId}}&materialId=2147483647
+Accept: application/json
+
+
+

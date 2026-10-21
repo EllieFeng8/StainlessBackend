@@ -1,0 +1,284 @@
+# 主管流程：掃描工單 -> 選製程派工（打頭／委外／搓牙）-> 設定產量與允許範圍 -> 歷史紀錄
+# 使用方式同 qcFlow.http：JetBrains HTTP Client，可執行回應測試與變數擷取。
+# 逐支執行；依製程選 A/B/C 分支。POST 會新增資料，重跑會重複派工／紀錄，請勿 Run All。
+# 現有 API 已涵蓋本檔流程，不新增端點或資料庫欄位。
+# workOrderCode 在掃描 URL 是工單編號；派工與歷史 JSON 的 workOrderCode 則傳工單資料庫 id。
+# 目標與偏差屬於「工單＋機台＋物料」派工紀錄，不是機台主檔。
+# 本例將 offset 當作數量偏差：10000、上偏差 500、下偏差 300 => 9700～10500。
+# 後端目前只儲存數值，未計算上下限或驗證非負數；若業務採百分比，需先統一規格。
+# 歷史紀錄必須在派工／修改成功後另外呼叫，兩者目前不在同一交易中。
+# 委外只有 outsourceQuantity，沒有機台／上下偏差欄位。
+@baseUrl = http://localhost:8080/api
+@workOrderCode = 4
+# 以下為示例，請由步驟 2 查詢確認實際機台、物料 id 後填入。
+@headMachineId = 11
+@threadMachineId = 12
+@headMaterialId = 2
+@threadMaterialId = 3
+@headTarget = 10000
+@headUpOffset = 500
+@headDownOffset = 300
+@threadTarget = 10000
+@threadUpOffset = 500
+@threadDownOffset = 300
+@outsourceCode = MANAGER-TEST-001
+@outsourceQuantity = 10000
+@outsourcePosition = TEST-VENDOR
+# 選用修改流程：從 A2/B2/C2 的查詢結果手動填入正確紀錄 id，0 為未設定。
+# 不自動取第一筆／最大 id，以免同工單多次派工時修改錯筆。
+@headingAssignmentId = 1
+@threadingAssignmentId = 1
+@outsourceId = 1
+@revisedTarget = 12000
+@revisedUpOffset = 600
+@revisedDownOffset = 400
+
+### 1. 掃描工單：成功 200 並保存 id；不存在 404
+GET {{baseUrl}}/workOrder/getWorkOrderByCode/{{workOrderCode}}
+Accept: application/json
+
+> {%
+    client.global.clear("managerWorkOrderId");
+    client.test("掃描工單成功且回傳 id", function () {
+        client.assert(response.status === 200 && response.body.id > 0, "工單查詢失敗");
+    });
+    if (response.status === 200 && response.body.id > 0) {
+        client.global.set("managerWorkOrderId", response.body.id);
+    }
+%}
+
+### 2a. 查工單物料，核對 headMaterialId / threadMaterialId（不是物料掃描碼）
+GET {{baseUrl}}/materialHistory/getMaterialHistoryByWorkOrder?workOrderCode={{managerWorkOrderId}}
+Accept: application/json
+
+### 2b. 可選打頭機台：使用回傳的 id
+GET {{baseUrl}}/headMachine/getMachines
+Accept: application/json
+
+### 2c. 可選搓牙機台：使用回傳的 id
+GET {{baseUrl}}/threadMachine/getMachines
+Accept: application/json
+
+### A1. 新增打頭派工，同時設定機台目標產量與允許偏差：201
+POST {{baseUrl}}/workOrderHeadingMachine/addWorkOrderHeadingMachine
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workOrderCode": {{managerWorkOrderId}},
+  "machineId": {{headMachineId}},
+  "materialId": {{headMaterialId}},
+  "targetQuantity": {{headTarget}},
+  "targetUpOffsetQuantity": {{headUpOffset}},
+  "targetDownOffsetQuantity": {{headDownOffset}},
+  "currentQuantity": 0,
+  "orderClosed": 0,
+  "remark": "主管流程測試：打頭派工"
+}
+
+> {%
+    client.test("打頭派工成功", function () {
+        client.assert(response.status === 201, "新增失敗，請勿執行 A3 紀錄成功事件");
+    });
+%}
+
+### A2. 查詢打頭派工：核對目標與上下偏差，記下欲修改紀錄的 id
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine?workOrderId={{managerWorkOrderId}}&headMachineId={{headMachineId}}&materialId={{headMaterialId}}
+Accept: application/json
+
+### A3. A1 成功後新增打頭派工歷史：201；省略 time 使用資料庫目前時間
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+Accept: application/json
+
+{
+  "title": "主管派工－打頭",
+  "workOrderCode": {{managerWorkOrderId}},
+  "log": "打頭機台 id={{headMachineId}}，物料 id={{headMaterialId}}，目標={{headTarget}}，上偏差={{headUpOffset}}，下偏差={{headDownOffset}}"
+}
+
+> {%
+    client.test("打頭派工歷史儲存成功", function () {
+        client.assert(response.status === 201, "歷史儲存失敗；派工可能已成功，請勿重送派工");
+    });
+%}
+
+### B1. 新增委外派工：201；委外代碼請依實際規則填寫
+POST {{baseUrl}}/outsource/addOutsource
+Content-Type: application/json
+Accept: application/json
+
+{
+  "outsourceCode": "{{outsourceCode}}",
+  "workOrderId": {{managerWorkOrderId}},
+  "outsourceQuantity": {{outsourceQuantity}},
+  "outsourcePosition": "{{outsourcePosition}}"
+}
+
+> {%
+    client.test("委外派工成功", function () {
+        client.assert(response.status === 201, "新增失敗，請勿執行 B3 紀錄成功事件");
+    });
+%}
+
+### B2. 查工單委外資料，依 outsourceCode 確認本次資料及 id
+GET {{baseUrl}}/outsource/getOutsourceByWorkOrder?workOrderId={{managerWorkOrderId}}
+Accept: application/json
+
+### B3. B1 成功後新增委外派工歷史：201
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+Accept: application/json
+
+{
+  "title": "主管派工－委外",
+  "workOrderCode": {{managerWorkOrderId}},
+  "log": "委外單={{outsourceCode}}，委外對象／位置={{outsourcePosition}}，委外數量={{outsourceQuantity}}"
+}
+
+> {%
+    client.test("委外派工歷史儲存成功", function () {
+        client.assert(response.status === 201, "歷史儲存失敗；請先確認委外派工已成功");
+    });
+%}
+
+### C1. 新增搓牙派工，同時設定機台目標產量與允許偏差：201
+POST {{baseUrl}}/workOrderThreadingMachine/addWorkOrderThreadingMachine
+Content-Type: application/json
+Accept: application/json
+
+{
+  "workOrderCode": {{managerWorkOrderId}},
+  "machineId": {{threadMachineId}},
+  "materialId": {{threadMaterialId}},
+  "targetQuantity": {{threadTarget}},
+  "targetUpOffsetQuantity": {{threadUpOffset}},
+  "targetDownOffsetQuantity": {{threadDownOffset}},
+  "currentQuantity": 0,
+  "orderClosed": 0,
+  "remark": "主管流程測試：搓牙派工"
+}
+
+> {%
+    client.test("搓牙派工成功", function () {
+        client.assert(response.status === 201, "新增失敗，請勿執行 C3 紀錄成功事件");
+    });
+%}
+
+### C2. 查詢搓牙派工：核對目標與上下偏差，記下欲修改紀錄的 id
+GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine?workOrderId={{managerWorkOrderId}}&threadMachineId={{threadMachineId}}&materialId={{threadMaterialId}}
+Accept: application/json
+
+### C3. C1 成功後新增搓牙派工歷史：201
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+Accept: application/json
+
+{
+  "title": "主管派工－搓牙",
+  "workOrderCode": {{managerWorkOrderId}},
+  "log": "搓牙機台 id={{threadMachineId}}，物料 id={{threadMaterialId}}，目標={{threadTarget}}，上偏差={{threadUpOffset}}，下偏差={{threadDownOffset}}"
+}
+
+> {%
+    client.test("搓牙派工歷史儲存成功", function () {
+        client.assert(response.status === 201, "歷史儲存失敗；請先確認搓牙派工已成功");
+    });
+%}
+
+### 3. 查工單歷史：200，依 time DESC / id DESC 排序，核對所選製程的紀錄
+GET {{baseUrl}}/historyLog/getHistoryLogByWorkOrder?workOrderCode={{managerWorkOrderId}}
+Accept: application/json
+
+> {%
+    client.test("工單歷史查詢成功", function () {
+        client.assert(response.status === 200 && Array.isArray(response.body), "歷史查詢失敗");
+    });
+%}
+
+### 4a. 選用：修改打頭派工產量／允許偏差，先填 headingAssignmentId；成功 200
+PATCH {{baseUrl}}/workOrderHeadingMachine/updateWorkOrderHeadingMachine/{{headingAssignmentId}}
+Content-Type: application/json
+
+{
+  "targetQuantity": {{revisedTarget}},
+  "targetUpOffsetQuantity": {{revisedUpOffset}},
+  "targetDownOffsetQuantity": {{revisedDownOffset}},
+  "quantityChangeReason": "主管調整打頭目標產量與允許範圍"
+}
+
+### 4b. 4a 成功後記錄打頭設定修改；再執行 A2 與步驟 3 驗證
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+
+{
+  "title": "主管調整－打頭產量設定",
+  "workOrderCode": {{managerWorkOrderId}},
+  "log": "打頭派工 id={{headingAssignmentId}}，新目標={{revisedTarget}}，新上偏差={{revisedUpOffset}}，新下偏差={{revisedDownOffset}}"
+}
+
+### 5a. 選用：修改搓牙派工產量／允許偏差，先填 threadingAssignmentId；成功 200
+PATCH {{baseUrl}}/workOrderThreadingMachine/updateWorkOrderThreadingMachine/{{threadingAssignmentId}}
+Content-Type: application/json
+
+{
+  "targetQuantity": {{revisedTarget}},
+  "targetUpOffsetQuantity": {{revisedUpOffset}},
+  "targetDownOffsetQuantity": {{revisedDownOffset}},
+  "quantityChangeReason": "主管調整搓牙目標產量與允許範圍"
+}
+
+### 5b. 5a 成功後記錄搓牙設定修改；再執行 C2 與步驟 3 驗證
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+
+{
+  "title": "主管調整－搓牙產量設定",
+  "workOrderCode": {{managerWorkOrderId}},
+  "log": "搓牙派工 id={{threadingAssignmentId}}，新目標={{revisedTarget}}，新上偏差={{revisedUpOffset}}，新下偏差={{revisedDownOffset}}"
+}
+
+### 6a. 選用：修改委外數量，先填 outsourceId；成功 200
+PATCH {{baseUrl}}/outsource/updateOutsource/{{outsourceId}}
+Content-Type: application/json
+
+{
+  "outsourceQuantity": {{revisedTarget}}
+}
+
+### 6b. 6a 成功後記錄委外數量修改；再執行 B2 與步驟 3 驗證
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+
+{
+  "title": "主管調整－委外數量",
+  "workOrderCode": {{managerWorkOrderId}},
+  "log": "委外紀錄 id={{outsourceId}}，新委外數量={{revisedTarget}}"
+}
+
+### 邊界：非數字工單掃描碼，預期 400
+GET {{baseUrl}}/workOrder/getWorkOrderByCode/abc
+
+### 邊界：新增打頭派工缺必填欄位，預期 400
+POST {{baseUrl}}/workOrderHeadingMachine/addWorkOrderHeadingMachine
+Content-Type: application/json
+
+{}
+
+### 邊界：新增搓牙派工缺必填欄位，預期 400
+POST {{baseUrl}}/workOrderThreadingMachine/addWorkOrderThreadingMachine
+Content-Type: application/json
+
+{}
+
+### 邊界：新增委外派工缺 workOrderId，預期 400
+POST {{baseUrl}}/outsource/addOutsource
+Content-Type: application/json
+
+{}
+
+### 邊界：新增歷史缺 workOrderCode，預期 400
+POST {{baseUrl}}/historyLog/addHistoryLog
+Content-Type: application/json
+
+{}
