@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.WorkOrderHistoryPage;
 import com.example.demo.dto.WorkOrderHistoryQuery;
 import com.example.demo.service.WorkOrderHistoryService;
@@ -13,6 +15,7 @@ import java.util.Map;
 @RequestMapping("/work-order-history")
 public class WorkOrderHistoryController {
     private final WorkOrderHistoryService service;
+    @Autowired
     public WorkOrderHistoryController(WorkOrderHistoryService service) { this.service = service; }
 
     @GetMapping

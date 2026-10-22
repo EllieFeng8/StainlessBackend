@@ -1,5 +1,7 @@
 package com.example.demo.dao;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.rowMapper.OutsourceFormRowMapper;
 import com.example.demo.dto.OutsourceFormRequest;
 import com.example.demo.model.OutsourceForm;
@@ -17,6 +19,7 @@ import java.util.Optional;
 public class OutsourceFormDao {
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
+    @Autowired
     public OutsourceFormDao(NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

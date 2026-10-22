@@ -1,0 +1,306 @@
+{
+  "order" : {
+    "databaseId" : 1,
+    "workOrderCode" : "123",
+    "quantity" : 1000.0,
+    "deadlineDate" : "2026-11-01",
+    "dueDateDisplay" : "2026/11/1",
+    "productName" : "",
+    "productCode" : "M",
+    "process" : "",
+    "details" : {
+      "customerName" : "",
+      "specification" : "M",
+      "materialGrade" : "",
+      "wireDiameter" : null,
+      "wireWeightKg" : null,
+      "wireDrawingFactory" : "",
+      "heatNumber" : "",
+      "remark" : "",
+      "wireLength" : "",
+      "surfaceTreatment" : "",
+      "inspectionStandard" : ""
+    }
+  },
+  "summary" : {
+    "statusCode" : "READY",
+    "statusLabel" : "等待生產",
+    "statusTone" : "ready"
+  },
+  "processGroups" : [ {
+    "stage" : "head",
+    "name" : "打頭機台",
+    "rows" : [ {
+      "rowId" : "head-2",
+      "assignmentId" : 2,
+      "stage" : "head",
+      "machineId" : 7,
+      "materialId" : 9,
+      "name" : "打頭七號（7）",
+      "nameDisplay" : "打頭七號（7）",
+      "targetQuantity" : 1000.0,
+      "producedQuantity" : 0.0,
+      "startedAt" : null,
+      "endedAt" : null,
+      "rawStatus" : "",
+      "statusCode" : "READY",
+      "statusLabel" : "等待生產",
+      "statusTone" : "ready",
+      "material" : {
+        "id" : 9,
+        "name" : "盤元",
+        "specification" : "規格 A",
+        "barcode" : "BAR-9",
+        "available" : true,
+        "unavailableReason" : null
+      },
+      "firstArticle" : {
+        "firstArticleExists" : false,
+        "firstArticleCompleted" : false,
+        "requiresFirstArticle" : false,
+        "firstArticleCompletedAt" : null,
+        "firstArticleCompletedAtDisplay" : "",
+        "missingInspectionFields" : [ "heading_length", "head_dia", "head_angle_s1", "head_angle_s2", "punch_type_no", "punch_width", "punch_gauge_depth", "head_thickness_h1", "head_thickness_h2", "enlarged_shank_dia", "enlarged_length" ],
+        "hasFirstArticleClearance" : false,
+        "recordId" : null,
+        "exemptionConfirmedAt" : null,
+        "exemptionReason" : "",
+        "additionalProductionAt" : null,
+        "ambiguous" : false
+      },
+      "tolerance" : {
+        "lowerOffsetQuantity" : 50.0,
+        "upperOffsetQuantity" : 50.0,
+        "targetOffsetLowerPercent" : 5.0000000000000000,
+        "targetOffsetUpperPercent" : 5.0000000000000000,
+        "minimumQuantity" : 950,
+        "maximumQuantity" : 1050,
+        "acceptableRangeDisplay" : "950～1,050",
+        "valid" : true,
+        "reasonCode" : null
+      },
+      "actions" : {
+        "openFirstArticle" : {
+          "visible" : true,
+          "enabled" : true,
+          "label" : "首件檢測",
+          "reasonCode" : null,
+          "reasonMessage" : "",
+          "confirmationRequired" : false,
+          "confirmationMessage" : "",
+          "targetType" : "FIRST_ARTICLE",
+          "workOrderCode" : "123",
+          "workOrderDatabaseId" : 1,
+          "stage" : "head",
+          "assignmentId" : 2,
+          "machineId" : 7,
+          "firstArticleId" : null
+        },
+        "openFieldStatus" : {
+          "visible" : true,
+          "enabled" : true,
+          "label" : "正式生產",
+          "reasonCode" : null,
+          "reasonMessage" : "",
+          "confirmationRequired" : true,
+          "confirmationMessage" : "一般製程須先完成首件檢測。僅『其他製程／委外／盤元異常補領』可免首件檢測；請確認本次符合其中一項。免首檢仍須核對生產物料。",
+          "targetType" : "FIELD_STATUS",
+          "workOrderCode" : "123",
+          "workOrderDatabaseId" : 1,
+          "stage" : "head",
+          "assignmentId" : 2,
+          "machineId" : 7,
+          "firstArticleId" : null
+        },
+        "confirmFirstArticleExemption" : {
+          "visible" : true,
+          "enabled" : true,
+          "label" : "確認免首件檢測",
+          "reasonCode" : null,
+          "reasonMessage" : "",
+          "confirmationRequired" : true,
+          "confirmationMessage" : "一般製程須先完成首件檢測。僅『其他製程／委外／盤元異常補領』可免首件檢測；請確認本次符合其中一項。免首檢仍須核對生產物料。",
+          "targetType" : "FIRST_ARTICLE_EXEMPTION",
+          "workOrderCode" : "123",
+          "workOrderDatabaseId" : 1,
+          "stage" : "head",
+          "assignmentId" : 2,
+          "machineId" : 7,
+          "firstArticleId" : null
+        }
+      }
+    } ]
+  }, {
+    "stage" : "outsourcing",
+    "name" : "委外",
+    "rows" : [ {
+      "rowId" : "outsourcing-4",
+      "assignmentId" : 4,
+      "stage" : "outsourcing",
+      "machineId" : null,
+      "materialId" : null,
+      "name" : "廠商 A",
+      "nameDisplay" : "廠商 A",
+      "targetQuantity" : 1000.0,
+      "producedQuantity" : 0,
+      "startedAt" : null,
+      "endedAt" : null,
+      "rawStatus" : "開始",
+      "statusCode" : "RUNNING",
+      "statusLabel" : "生產中",
+      "statusTone" : "running",
+      "material" : null,
+      "firstArticle" : null,
+      "tolerance" : {
+        "lowerOffsetQuantity" : null,
+        "upperOffsetQuantity" : null,
+        "targetOffsetLowerPercent" : 0E-16,
+        "targetOffsetUpperPercent" : 0E-16,
+        "minimumQuantity" : 1000,
+        "maximumQuantity" : 1000,
+        "acceptableRangeDisplay" : "1,000～1,000",
+        "valid" : true,
+        "reasonCode" : null
+      },
+      "actions" : { }
+    } ]
+  }, {
+    "stage" : "thread",
+    "name" : "搓牙機台",
+    "rows" : [ {
+      "rowId" : "thread-3",
+      "assignmentId" : 3,
+      "stage" : "thread",
+      "machineId" : 7,
+      "materialId" : null,
+      "name" : "搓牙七號（7）",
+      "nameDisplay" : "搓牙七號（7）",
+      "targetQuantity" : 1000.0,
+      "producedQuantity" : 0.0,
+      "startedAt" : null,
+      "endedAt" : null,
+      "rawStatus" : "",
+      "statusCode" : "READY",
+      "statusLabel" : "等待生產",
+      "statusTone" : "ready",
+      "material" : {
+        "id" : null,
+        "name" : "",
+        "specification" : "M",
+        "barcode" : "",
+        "available" : false,
+        "unavailableReason" : "派工未指定物料"
+      },
+      "firstArticle" : {
+        "firstArticleExists" : false,
+        "firstArticleCompleted" : false,
+        "requiresFirstArticle" : false,
+        "firstArticleCompletedAt" : null,
+        "firstArticleCompletedAtDisplay" : "",
+        "missingInspectionFields" : [ "thread_type", "thread_pitch", "major_diameter_d1", "oblique_tooth_length", "thread_angle", "thread_length", "oblique_tooth_diameter", "thread_tail_angle", "minor_diameter", "major_diameter_d2", "overall_length" ],
+        "hasFirstArticleClearance" : false,
+        "recordId" : null,
+        "exemptionConfirmedAt" : null,
+        "exemptionReason" : "",
+        "additionalProductionAt" : null,
+        "ambiguous" : false
+      },
+      "tolerance" : {
+        "lowerOffsetQuantity" : null,
+        "upperOffsetQuantity" : null,
+        "targetOffsetLowerPercent" : 0E-16,
+        "targetOffsetUpperPercent" : 0E-16,
+        "minimumQuantity" : 1000,
+        "maximumQuantity" : 1000,
+        "acceptableRangeDisplay" : "1,000～1,000",
+        "valid" : true,
+        "reasonCode" : null
+      },
+      "actions" : {
+        "openFirstArticle" : {
+          "visible" : true,
+          "enabled" : true,
+          "label" : "首件檢測",
+          "reasonCode" : null,
+          "reasonMessage" : "",
+          "confirmationRequired" : false,
+          "confirmationMessage" : "",
+          "targetType" : "FIRST_ARTICLE",
+          "workOrderCode" : "123",
+          "workOrderDatabaseId" : 1,
+          "stage" : "thread",
+          "assignmentId" : 3,
+          "machineId" : 7,
+          "firstArticleId" : null
+        },
+        "openFieldStatus" : {
+          "visible" : true,
+          "enabled" : true,
+          "label" : "正式生產",
+          "reasonCode" : null,
+          "reasonMessage" : "",
+          "confirmationRequired" : true,
+          "confirmationMessage" : "一般製程須先完成首件檢測。僅『其他製程／委外／盤元異常補領』可免首件檢測；請確認本次符合其中一項。免首檢仍須核對生產物料。",
+          "targetType" : "FIELD_STATUS",
+          "workOrderCode" : "123",
+          "workOrderDatabaseId" : 1,
+          "stage" : "thread",
+          "assignmentId" : 3,
+          "machineId" : 7,
+          "firstArticleId" : null
+        },
+        "confirmFirstArticleExemption" : {
+          "visible" : true,
+          "enabled" : true,
+          "label" : "確認免首件檢測",
+          "reasonCode" : null,
+          "reasonMessage" : "",
+          "confirmationRequired" : true,
+          "confirmationMessage" : "一般製程須先完成首件檢測。僅『其他製程／委外／盤元異常補領』可免首件檢測；請確認本次符合其中一項。免首檢仍須核對生產物料。",
+          "targetType" : "FIRST_ARTICLE_EXEMPTION",
+          "workOrderCode" : "123",
+          "workOrderDatabaseId" : 1,
+          "stage" : "thread",
+          "assignmentId" : 3,
+          "machineId" : 7,
+          "firstArticleId" : null
+        }
+      }
+    } ]
+  } ],
+  "machineChoices" : {
+    "thread" : [ {
+      "id" : 7,
+      "name" : "搓牙七號（7）"
+    } ],
+    "head" : [ {
+      "id" : 7,
+      "name" : "打頭七號（7）"
+    } ]
+  },
+  "materialChoices" : [ {
+    "id" : 9,
+    "name" : "盤元",
+    "specification" : "規格 A",
+    "barcode" : "BAR-9",
+    "available" : true,
+    "unavailableReason" : null
+  } ],
+  "events" : [ {
+    "id" : 266,
+    "type" : "派工－打頭",
+    "detail" : "使用機台：打頭七號；預計生產 1,000 件；可接受的產量為 950～1,050 件。",
+    "occurredAt" : "2026-10-22T13:05:00+08:00",
+    "occurredAtDisplay" : "2026/10/22 13:05:00"
+  } ],
+  "dataIssues" : [ {
+    "code" : "MATERIAL_NOT_FOUND",
+    "rowId" : "thread-3",
+    "message" : "派工未指定物料"
+  }, {
+    "code" : "MATERIAL_AUTHORIZATION_NOT_CONFIGURED",
+    "rowId" : null,
+    "message" : "沿用現有全物料可見範圍；專案未提供使用者／物料權限模型"
+  } ],
+  "timeZone" : "Asia/Taipei"
+}

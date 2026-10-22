@@ -15,6 +15,8 @@ import java.util.Map;
 public class FirstTestFormService {
     @Autowired
     FirstTestFormDao firstTestFormDao;
+    @Autowired
+    WorkOrderFirstArticleStateService firstArticleState;
 
     @org.springframework.transaction.annotation.Transactional
     public FirstTestFormDao.SaveResult addFirstTestForm(FirstTestFormRequest request) {
@@ -30,8 +32,11 @@ public class FirstTestFormService {
         if (!firstTestFormDao.lockWorkOrder(request.workOrderCode())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "工單不存在");
         }
-        return firstTestFormDao.saveFirstTestForm(request, dateTime);
+        var result = firstTestFormDao.saveFirstTestForm(request, dateTime);
+        firstArticleState.synchronizeLegacy(result.id(), request);
+        return result;
     }
+    @org.springframework.transaction.annotation.Transactional
     public void updateFirstTestForm(int id, FirstTestFormRequest request) {
         if (id <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "id must be positive");
@@ -40,10 +45,12 @@ public class FirstTestFormService {
         if (params.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one non-null field is required");
         }
+        firstArticleState.lockRecordOrder(id);
         int updated = firstTestFormDao.updateFirstTestForm(id, params);
         if (updated == 0 && !firstTestFormDao.existsById(id)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "First test form not found");
         }
+        firstArticleState.synchronizeLegacy(id, request);
     }
 
     public List<FirstTestForm> firstTestFormList(){return firstTestFormDao.getFirstTestForm();}

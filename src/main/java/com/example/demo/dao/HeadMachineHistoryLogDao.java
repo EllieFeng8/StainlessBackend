@@ -1,5 +1,7 @@
 package com.example.demo.dao;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.rowMapper.HeadMachineHistoryLogRowMapper;
 import com.example.demo.dto.HeadMachineHistoryLogRequest;
 import com.example.demo.model.HeadMachineHistoryLog;
@@ -17,6 +19,7 @@ import java.util.Optional;
 public class HeadMachineHistoryLogDao {
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
+    @Autowired
     public HeadMachineHistoryLogDao(NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

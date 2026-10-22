@@ -1,0 +1,48 @@
+@base = http://localhost:8080/api
+@workOrderCode = 123
+@assignmentId = 2
+@recordId = 51
+
+### 明細（純讀取，顯示編號）
+GET {{base}}/work-orders/{{workOrderCode}}/detail
+
+### 開啟首件：後端查找／必要時建立
+POST {{base}}/work-orders/{{workOrderCode}}/assignments/head/{{assignmentId}}/first-article/prepare
+
+### 重跑首件
+POST {{base}}/work-orders/{{workOrderCode}}/assignments/head/{{assignmentId}}/first-article/rerun
+Content-Type: application/json
+
+{"reason":"換模重檢"}
+
+### 確認免首檢（僅符合後端當下條件時成功）
+POST {{base}}/work-orders/{{workOrderCode}}/assignments/head/{{assignmentId}}/first-article/exemption
+Content-Type: application/json
+
+{"reason":"盤元異常補領"}
+
+### 已完成結單的派工追加生產
+POST {{base}}/work-orders/{{workOrderCode}}/assignments/head/{{assignmentId}}/first-article/additional-production
+Content-Type: application/json
+
+{"reason":"追加訂單","targetQuantity":1200}
+
+### 沿用既有首件完成命令（ID 由 prepare 回應取得；數值僅為格式示例）
+PATCH {{base}}/firstTest/updateFirstTest/{{recordId}}
+Content-Type: application/json
+
+{
+  "head_machineId":7,
+  "state":true,
+  "heading_length":"0",
+  "head_dia":"0",
+  "head_angle_s1":"0",
+  "head_angle_s2":"0",
+  "punch_type_no":"0",
+  "punch_width":"0",
+  "punch_gauge_depth":"0",
+  "head_thickness_h1":"0",
+  "head_thickness_h2":"0",
+  "enlarged_shank_dia":"0",
+  "enlarged_length":"0"
+}

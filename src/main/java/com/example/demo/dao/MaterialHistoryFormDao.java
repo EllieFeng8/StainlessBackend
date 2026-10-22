@@ -1,5 +1,7 @@
 package com.example.demo.dao;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.rowMapper.MaterialHistoryFormRowMapper;
 import com.example.demo.dto.MaterialHistoryFormRequest;
 import com.example.demo.model.MaterialHistoryForm;
@@ -16,6 +18,7 @@ import java.util.Optional;
 public class MaterialHistoryFormDao {
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
+    @Autowired
     public MaterialHistoryFormDao(NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

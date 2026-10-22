@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dao.WorkOrderHistoryDao;
 import com.example.demo.dto.*;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ public class WorkOrderHistoryService {
     // Matches the repository's explicit JDBC serverTimezone=Asia/Taipei, not JVM/browser defaults.
     private static final ZoneId ZONE = ZoneId.of("Asia/Taipei");
     private final WorkOrderHistoryDao dao;
+    @Autowired
     public WorkOrderHistoryService(WorkOrderHistoryDao dao) { this.dao = dao; }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

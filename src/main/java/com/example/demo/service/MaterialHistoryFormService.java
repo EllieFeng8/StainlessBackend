@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dao.MaterialHistoryFormDao;
 import com.example.demo.dto.MaterialHistoryFormRequest;
 import com.example.demo.model.MaterialHistoryForm;
@@ -15,6 +17,7 @@ import java.util.Optional;
 public class MaterialHistoryFormService {
     private final MaterialHistoryFormDao dao;
 
+    @Autowired
     public MaterialHistoryFormService(MaterialHistoryFormDao dao) {
         this.dao = dao;
     }

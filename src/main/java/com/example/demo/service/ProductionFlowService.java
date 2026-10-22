@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ProductionFlowRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -11,6 +13,9 @@ import java.util.*;
 @Service
 public class ProductionFlowService {
     private final NamedParameterJdbcTemplate jdbc;
+    @Autowired
+    private WorkOrderFirstArticleStateService firstArticleState;
+    @Autowired
     public ProductionFlowService(NamedParameterJdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     public enum Process {
@@ -27,15 +32,18 @@ public class ProductionFlowService {
     @Transactional
     public void startProduction(Process process, int id) {
         require(id > 0, "id must be positive");
-        var rows = jdbc.queryForList("SELECT order_closed FROM mydb." + process.table
+        firstArticleState.lockAssignmentOrder(process.prefix, id);
+        var rows = jdbc.queryForList("SELECT * FROM mydb." + process.table
                 + " WHERE id=:id FOR UPDATE", Map.of("id", id));
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "派工不存在");
         var row = rows.getFirst();
         int closed = row.get("order_closed") == null ? 0 : ((Number) row.get("order_closed")).intValue();
         conflict(closed == 0, "已結單或審核中的派工不可開始生產");
+        firstArticleState.validateProductionClearance(process.prefix, row);
         jdbc.update("UPDATE mydb." + process.table
-                        + " SET production_status=:status, started_at=CURRENT_TIMESTAMP WHERE id=:id",
-                Map.of("status", "生產中", "id", id));
+                        + " SET production_status=:status, started_at=:now WHERE id=:id",
+                Map.of("status", "生產中", "id", id,
+                        "now", java.time.LocalDateTime.now(WorkOrderDetailService.ZONE)));
     }
 
     @Transactional
@@ -45,6 +53,7 @@ public class ProductionFlowService {
             return;
         }
         require(id > 0, "id must be positive");
+        firstArticleState.lockAssignmentOrder(process.prefix, id);
         var rows = jdbc.queryForList("SELECT * FROM mydb." + process.table + " WHERE id=:id FOR UPDATE", Map.of("id", id));
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "派工不存在");
         var row = rows.getFirst();
@@ -52,6 +61,7 @@ public class ProductionFlowService {
         Map<String, Object> fields = new LinkedHashMap<>();
         switch (action) {
             case "status" -> {
+                if ("生產中".equals(r.productionStatus())) firstArticleState.validateProductionClearance(process.prefix, row);
                 require(!"開始生產".equals(r.productionStatus()), "開始生產請使用 /production/start API");
                 conflict(closed == 0 && row.get("started_at") != null, "僅生產中的派工可變更狀態");
                 require(r.productionStatus() != null && STATUSES.contains(r.productionStatus()), "不支援的 productionStatus");

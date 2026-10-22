@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.HistoryLogRequest;
 import com.example.demo.model.HistoryLog;
@@ -21,6 +23,7 @@ import java.util.List;
 public class HistoryLogController {
     private final HistoryLogService service;
 
+    @Autowired
     public HistoryLogController(HistoryLogService service) {
         this.service = service;
     }

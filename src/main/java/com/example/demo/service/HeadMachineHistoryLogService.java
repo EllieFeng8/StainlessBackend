@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dao.HeadMachineHistoryLogDao;
 import com.example.demo.dto.HeadMachineHistoryLogRequest;
 import com.example.demo.model.HeadMachineHistoryLog;
@@ -14,6 +16,7 @@ import java.util.Optional;
 public class HeadMachineHistoryLogService {
     private final HeadMachineHistoryLogDao dao;
 
+    @Autowired
     public HeadMachineHistoryLogService(HeadMachineHistoryLogDao dao) {
         this.dao = dao;
     }

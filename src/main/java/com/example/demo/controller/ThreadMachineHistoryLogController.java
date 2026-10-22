@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.ThreadMachineHistoryLogRequest;
 import com.example.demo.model.ThreadMachineHistoryLog;
@@ -21,6 +23,7 @@ import java.util.List;
 public class ThreadMachineHistoryLogController {
     private final ThreadMachineHistoryLogService service;
 
+    @Autowired
     public ThreadMachineHistoryLogController(ThreadMachineHistoryLogService service) {
         this.service = service;
     }

@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.MaterialHistoryFormRequest;
 import com.example.demo.model.MaterialHistoryForm;
@@ -22,6 +24,7 @@ import java.util.List;
 public class MaterialHistoryFormController {
     private final MaterialHistoryFormService service;
 
+    @Autowired
     public MaterialHistoryFormController(MaterialHistoryFormService service) {
         this.service = service;
     }

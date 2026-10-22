@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.ThreadingProductionAssignmentResponse;
 import com.example.demo.dto.ProductionFlowRequest;
@@ -20,6 +22,7 @@ public class WorkOrderThreadingMachineController {
     private final WorkOrderThreadingMachineService service;
     private final ProductionFlowService productionFlow;
 
+    @Autowired
     public WorkOrderThreadingMachineController(WorkOrderThreadingMachineService service, ProductionFlowService productionFlow) {
         this.productionFlow = productionFlow;
         this.service = service;

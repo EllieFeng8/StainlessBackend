@@ -1,5 +1,7 @@
 package com.example.demo.dao;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.rowMapper.WorkOrderThreadingMachineRowMapper;
 import com.example.demo.dto.WorkOrderThreadingMachineRequest;
 import com.example.demo.model.WorkOrderThreadingMachine;
@@ -15,6 +17,7 @@ import java.util.Optional;
 public class WorkOrderThreadingMachineDao {
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
+    @Autowired
     public WorkOrderThreadingMachineDao(NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

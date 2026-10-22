@@ -1,0 +1,155 @@
+package com.example.demo.service;
+
+import com.example.demo.dao.*;
+import com.example.demo.dto.*;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.ObjectMapper;
+import java.sql.*;
+import java.nio.file.*;
+import java.util.*;
+import java.math.BigDecimal;
+import static org.junit.jupiter.api.Assertions.*;
+import static com.example.demo.service.WorkOrderDetailService.*;
+
+/** Real MySQL, connection-local TEMPORARY shadows only. Persistent data is never written. */
+@EnabledIfSystemProperty(named="detail.mysql.tests",matches="true")
+class WorkOrderDetailMysqlTest {
+    Connection connection; JdbcTemplate jdbc; NamedParameterJdbcTemplate named;
+    WorkOrderDetailDao dao; WorkOrderDetailService service; WorkOrderFirstArticleStateService commands;
+    FirstTestFormService legacy; TransactionTemplate tx;
+    @BeforeEach void setup() throws Exception {
+        Properties p=new Properties();
+        try(var in=Files.newInputStream(Path.of(System.getProperty("detail.mysql.properties")))) {p.load(in);}
+        connection=DriverManager.getConnection(p.getProperty("spring.datasource.url"),p.getProperty("spring.datasource.username"),p.getProperty("spring.datasource.password"));
+        var ds=new SingleConnectionDataSource(connection,true);
+        jdbc=new JdbcTemplate(ds); named=new NamedParameterJdbcTemplate(ds);
+        tx=new TransactionTemplate(new DataSourceTransactionManager(ds));
+        for(String table:List.of("work_order","work_order_heading_machine","work_order_threading_machine","first_test_form","head_machine","thread_machine","material_history_form","outsource_form","history_log","head_machine_history_log","thread_machine_history_log")) {
+            String ddl=jdbc.queryForObject("SHOW CREATE TABLE mydb."+table,(r,n)->r.getString(2));
+            ddl=ddl.replace("CREATE TABLE `"+table+"`","CREATE TEMPORARY TABLE mydb.`"+table+"`")
+                    .replaceAll("(?m)^  CONSTRAINT .*\\n","").replace(",\n)","\n)");
+            jdbc.execute(ddl);
+        }
+        String migration=Files.readString(Path.of("../sql/work_order_detail_first_article_state.sql"));
+        migration=migration.replaceAll("(?m)^--.*$","").replace("CREATE TABLE mydb.work_order_first_article_state","CREATE TEMPORARY TABLE mydb.work_order_first_article_state");
+        for(String statement:migration.split(";")) if(!statement.isBlank()) jdbc.execute(statement);
+        jdbc.update("INSERT INTO mydb.work_order (id,work_code,start_at,end_at,update_quantity,total_quantity,model,deadline_date) VALUES (1,123,'2026-10-01','2026-11-01',0,1000,'M','2026-11-01'),(2,456,'2026-10-01','2026-11-01',0,50,'Other',NULL)");
+        jdbc.update("INSERT INTO mydb.head_machine (id,head_machine_name) VALUES (7,'打頭七號')");
+        jdbc.update("INSERT INTO mydb.thread_machine (id,thread_rolling_machine_code,thread_rolling_machine_name) VALUES (7,'T7','搓牙七號')");
+        jdbc.update("INSERT INTO mydb.material_history_form (material_id,material_code,material_name,remark) VALUES (9,'BAR-9','盤元','規格 A')");
+        jdbc.update("INSERT INTO mydb.work_order_heading_machine (id,work_order_code,machineId,material_id,target_quantity,target_down_offset_quantity,target_up_offset_quantity,current_quantity) VALUES (2,1,7,9,1000,50,50,0),(10,2,7,9,50,0,0,0)");
+        jdbc.update("INSERT INTO mydb.work_order_threading_machine (id,work_order_code,machineId,target_quantity,current_quantity) VALUES (3,1,7,1000,0)");
+        jdbc.update("INSERT INTO mydb.outsource_form (id,work_order_id,outsource_position,state) VALUES (4,1,'廠商 A','開始')");
+        dao=new WorkOrderDetailDao(named);service=new WorkOrderDetailService(dao);commands=new WorkOrderFirstArticleStateService(named,dao);
+        legacy=new FirstTestFormService(); var firstDao=new FirstTestFormDao();
+        ReflectionTestUtils.setField(firstDao,"namedParameterJdbcTemplate",named);
+        ReflectionTestUtils.setField(legacy,"firstTestFormDao",firstDao);
+        ReflectionTestUtils.setField(legacy,"firstArticleState",commands);
+    }
+    @AfterEach void close() throws Exception {if(connection!=null) connection.close();}
+    WorkOrderFirstArticleStateService.CommandResult command(String action,WorkOrderDetailCommandRequest body) {
+        return tx.execute(s -> commands.command(new WorkOrderDetailRequest("123"),"head",2,action,body));
+    }
+    FirstTestFormRequest request(Map<String,Object> data) {return new ObjectMapper().convertValue(data,FirstTestFormRequest.class);}
+    FirstTestFormRequest completeRequest(String stage) {
+        var map=new HashMap<String,Object>();map.put("state",true);map.put(stage+"_machineId",7);
+        (stage.equals("head")?HEAD_FIELDS:THREAD_FIELDS).forEach(f->map.put(f,"0"));
+        return request(map);
+    }
+    @Test void actualSqlReadOnlyContractAndSample() throws Exception {
+        jdbc.update("INSERT INTO mydb.history_log (title,`time`,work_order_code,log) VALUES ('主管派工－打頭','2026-10-22 13:05:00',1,'{\"machineId\":7,\"targetQuantity\":1000,\"targetDownOffsetQuantity\":50,\"targetUpOffsetQuantity\":50}')");
+        long before=jdbc.queryForObject("SELECT COUNT(*) FROM mydb.first_test_form",Long.class);
+        var response=tx.execute(s -> {s.setRollbackOnly();return service.detail(new WorkOrderDetailRequest("123"));});
+        assertEquals("2026-11-01",response.order().deadlineDate());
+        assertEquals("2026/11/1",response.order().dueDateDisplay());
+        assertNull(response.order().details().wireDiameter());
+        assertEquals("打頭七號（7）",response.processGroups().getFirst().rows().getFirst().name());
+        assertEquals("BAR-9",response.processGroups().getFirst().rows().getFirst().material().barcode());
+        assertEquals("950～1,050",response.processGroups().getFirst().rows().getFirst().tolerance().acceptableRangeDisplay());
+        assertEquals(before,jdbc.queryForObject("SELECT COUNT(*) FROM mydb.first_test_form",Long.class));
+        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM mydb.work_order_first_article_state",Integer.class));
+        Files.writeString(Path.of("../http/work-order-detail.example.json"),new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(response));
+    }
+    @Test void prepareCompleteRerunAndLegacyRollback() {
+        var first=command("prepare",null);
+        assertTrue(first.firstArticle().requiresFirstArticle());
+        assertEquals(first.firstArticleId(),command("prepare",null).firstArticleId());
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM mydb.first_test_form",Integer.class));
+        assertThrows(ResponseStatusException.class,()->tx.execute(s->{legacy.updateFirstTestForm(first.firstArticleId().intValue(),request(Map.of("state",true)));return null;}));
+        assertFalse(jdbc.queryForObject("SELECT state FROM mydb.first_test_form WHERE id=?",Boolean.class,first.firstArticleId()));
+        tx.execute(s->{legacy.updateFirstTestForm(first.firstArticleId().intValue(),completeRequest("head"));return null;});
+        var loaded=service.detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst().firstArticle();
+        assertTrue(loaded.firstArticleCompleted());assertTrue(loaded.hasFirstArticleClearance());assertNotNull(loaded.firstArticleCompletedAt());
+        assertFalse(service.detail(new WorkOrderDetailRequest("123")).processGroups().get(2).rows().getFirst().firstArticle().firstArticleCompleted());
+        command("rerun",new WorkOrderDetailCommandRequest("換模重檢",null));
+        assertFalse(service.detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst().firstArticle().firstArticleCompleted());
+        assertEquals("0",jdbc.queryForObject("SELECT heading_length FROM mydb.first_test_form WHERE id=?",String.class,first.firstArticleId()));
+    }
+    @Test void sameMachineDifferentOrdersAndDuplicateDetection() {
+        jdbc.update("INSERT INTO mydb.first_test_form (work_order_code,head_machineId,state) VALUES (2,7,TRUE)");
+        assertFalse(service.detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst().firstArticle().firstArticleExists());
+        var first=command("prepare",null);
+        jdbc.update("INSERT INTO mydb.first_test_form (work_order_code,head_machineId,state) VALUES (1,7,FALSE)");
+        assertTrue(service.detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst().firstArticle().ambiguous());
+        assertThrows(ResponseStatusException.class,()->command("prepare",null));
+        assertNotNull(first.firstArticleId());
+    }
+    @Test void exemptionSurvivesNewServiceAndStaleCommandsFail() {
+        command("exemption",new WorkOrderDetailCommandRequest("盤元異常補領",null));
+        var fromOtherDevice=new WorkOrderDetailService(new WorkOrderDetailDao(named)).detail(new WorkOrderDetailRequest("123"));
+        assertTrue(fromOtherDevice.processGroups().getFirst().rows().getFirst().firstArticle().hasFirstArticleClearance());
+        assertThrows(ResponseStatusException.class,()->command("exemption",new WorkOrderDetailCommandRequest("盤元異常補領",null)));
+        var production=new ProductionFlowService(named);ReflectionTestUtils.setField(production,"firstArticleState",commands);
+        tx.execute(s->{production.startProduction(ProductionFlowService.Process.HEADING,2);return null;});
+        command("rerun",new WorkOrderDetailCommandRequest("重新檢驗",null));
+        assertThrows(ResponseStatusException.class,()->tx.execute(s->{production.startProduction(ProductionFlowService.Process.HEADING,2);return null;}));
+    }
+    @Test void additionalProductionPersistsAndCannotOverrideRerun() {
+        command("exemption",new WorkOrderDetailCommandRequest("其他製程",null));
+        jdbc.update("UPDATE mydb.work_order_heading_machine SET order_closed=1,current_quantity=1000 WHERE id=2");
+        command("additional-production",new WorkOrderDetailCommandRequest("追加訂單",new BigDecimal("1200")));
+        var r=new WorkOrderDetailService(dao).detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst();
+        assertEquals("待續產",r.statusLabel());assertNotNull(r.firstArticle().additionalProductionAt());assertTrue(r.firstArticle().hasFirstArticleClearance());
+        command("rerun",new WorkOrderDetailCommandRequest("換針",null));
+        jdbc.update("UPDATE mydb.work_order_heading_machine SET order_closed=1 WHERE id=2");
+        command("additional-production",new WorkOrderDetailCommandRequest("再次追加",new BigDecimal("1300")));
+        r=service.detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst();
+        assertTrue(r.firstArticle().requiresFirstArticle());assertFalse(r.firstArticle().hasFirstArticleClearance());
+    }
+    @Test void actualEventOrderAndAssignmentIdOrder() {
+        jdbc.update("INSERT INTO mydb.work_order_heading_machine (id,work_order_code,machineId) VALUES (1,1,999)");
+        jdbc.update("INSERT INTO mydb.history_log (id,title,`time`,work_order_code,log) VALUES (1,'主管派工','2026-10-22 12:00:00',1,'文字'),(2,'事件','2026-10-22 12:00:00',1,'{bad'),(3,'事件',NULL,1,'未知')");
+        var r=service.detail(new WorkOrderDetailRequest("123"));
+        assertEquals(List.of(1L,2L),r.processGroups().getFirst().rows().stream().map(a->a.assignmentId()).toList());
+        assertEquals(List.of(2L,1L,3L),r.events().stream().map(e->e.id()).toList());
+    }
+    @Test void sharedRecordCompletionAndRerunDoNotCrossStages() {
+        var first=command("prepare",null);
+        jdbc.update("UPDATE mydb.first_test_form SET thread_machineId=7 WHERE id=?",first.firstArticleId());
+        tx.execute(s->{legacy.updateFirstTestForm(first.firstArticleId().intValue(),completeRequest("head"));return null;});
+        assertFalse(service.detail(new WorkOrderDetailRequest("123")).processGroups().get(2).rows().getFirst().firstArticle().firstArticleCompleted());
+        tx.execute(s->{legacy.updateFirstTestForm(first.firstArticleId().intValue(),completeRequest("thread"));return null;});
+        assertThrows(ResponseStatusException.class,()->tx.execute(s->{legacy.updateFirstTestForm(first.firstArticleId().intValue(),request(Map.of("state",false)));return null;}));
+        command("rerun",new WorkOrderDetailCommandRequest("打頭重跑",null));
+        var detail=service.detail(new WorkOrderDetailRequest("123"));
+        assertFalse(detail.processGroups().getFirst().rows().getFirst().firstArticle().hasFirstArticleClearance());
+        assertTrue(detail.processGroups().get(2).rows().getFirst().firstArticle().hasFirstArticleClearance());
+    }
+    @Test void legacyAddRemainsIdempotentAndCreatesAuthority() {
+        var fields=new HashMap<String,Object>();fields.put("work_order_code",1);fields.put("head_machineId",7);fields.put("state",true);
+        HEAD_FIELDS.forEach(f->fields.put(f,"0"));
+        var first=tx.execute(s->legacy.addFirstTestForm(request(fields)));
+        var again=tx.execute(s->legacy.addFirstTestForm(request(fields)));
+        assertEquals(first.id(),again.id());assertTrue(first.created());assertFalse(again.created());
+        assertTrue(service.detail(new WorkOrderDetailRequest("123")).processGroups().getFirst().rows().getFirst().firstArticle().hasFirstArticleClearance());
+    }
+}

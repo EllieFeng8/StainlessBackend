@@ -1,0 +1,207 @@
+package com.example.demo.service;
+
+import com.example.demo.dao.*;
+import com.example.demo.dto.*;
+import com.example.demo.controller.WorkOrderDetailController;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.util.ReflectionTestUtils;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Stream;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static com.example.demo.service.WorkOrderDetailService.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+
+class WorkOrderDetailTest {
+    static Map<String,Object> row(Object... values) {
+        var m=new HashMap<String,Object>(); for(int i=0;i<values.length;i+=2) m.put((String)values[i],values[i+1]); return m;
+    }
+    static BigDecimal n(String value) { return new BigDecimal(value); }
+    static Map<String,Object> complete(String stage) {
+        var r=row("id",5,"work_order_code",1,stage+"_machineId",7);
+        (stage.equals("head")?HEAD_FIELDS:THREAD_FIELDS).forEach(f -> r.put(f,0)); return r;
+    }
+    WorkOrderDetailDao dao;
+    WorkOrderDetailService service;
+    @BeforeEach void setup() {
+        dao=mock(WorkOrderDetailDao.class); service=new WorkOrderDetailService(dao);
+        when(dao.order("000123")).thenReturn(List.of(row("id",1,"work_code","000123","total_quantity",1000,"model","M")));
+    }
+    @Test void emptyAndOnlyOutsource() {
+        var empty=service.detail(new WorkOrderDetailRequest("000123"));
+        assertEquals("READY",empty.summary().statusCode());
+        assertEquals(List.of("head","outsourcing","thread"),empty.processGroups().stream().map(g -> g.stage()).toList());
+        assertTrue(empty.processGroups().stream().allMatch(g -> g.rows().isEmpty()));
+        assertEquals("000123",empty.order().workOrderCode());
+        assertEquals("",empty.order().productName());
+        assertNull(empty.order().details().wireWeightKg());
+        when(dao.assignments("outsourcing",1)).thenReturn(List.of(row("id",2,"state","完成")));
+        var result=service.detail(new WorkOrderDetailRequest("000123"));
+        assertEquals("READY",result.summary().statusCode());
+        var out=result.processGroups().get(1).rows().getFirst();
+        assertEquals(n("1000"),out.targetQuantity()); assertEquals(BigDecimal.ZERO,out.producedQuantity());
+        assertEquals("完成",out.statusLabel()); assertNull(out.firstArticle()); assertTrue(out.actions().isEmpty());
+        assertEquals("未填寫公司",out.nameDisplay());
+    }
+    @TestFactory Stream<DynamicTest> statusPriority() {
+        var tests=new ArrayList<DynamicTest>();
+        for(int closed:List.of(0,1,2,3,4)) for(boolean approved:List.of(false,true))
+            for(String production:List.of("","正式生產","等待材料核對","待主管審核","換料","無法續做")) for(boolean started:List.of(false,true)) {
+                String fallback=switch(production) {case "" -> started?"生產中":"等待生產"; case "正式生產" -> "生產中";
+                    case "等待材料核對" -> "等待生產"; case "待主管審核" -> "異常結單．待主管審核"; default -> production;};
+                String expected=switch(closed) {case 1->"正常結單";case 2->approved?"異常結單":"異常結單．待主管審核";case 3->"異常結單";case 4->"異常退回．待補正";default->fallback;};
+                tests.add(DynamicTest.dynamicTest(closed+"/"+approved+"/"+production+"/"+started,()->assertEquals(expected,
+                    assignmentStatus(row("order_closed",closed,"approved",approved,"production_status",production,"started_at",started?LocalDateTime.now():null)).statusLabel())));
+            }
+        return tests.stream();
+    }
+    @Test void summaryIsDetailRuleNotListRule() {
+        assertEquals("CLOSED_ABNORMAL",summary(List.of(status("正常結單"),status("異常結單"))).statusCode());
+        assertEquals("RUNNING",summary(List.of(status("正常結單"),status("等待生產"))).statusCode());
+        assertEquals("RUNNING",summary(List.of(status("異常結單．待主管審核"))).statusCode());
+        assertEquals("RUNNING",summary(List.of(status("異常退回．待補正"))).statusCode());
+        assertEquals("CLOSED",summary(List.of(status("正常結單"))).statusCode());
+        assertEquals("closed-error",status("異常結單").statusTone());
+        assertEquals("error",status("無法續做").statusTone());
+        assertEquals("waiting",status("換料").statusTone());
+    }
+    @Test void allStagesMissingRelationsAndActions() {
+        when(dao.assignments("head",1)).thenReturn(List.of(row("id",1,"machineId",7,"material_id",99,"order_closed",1)));
+        when(dao.assignments("thread",1)).thenReturn(List.of(row("id",2,"machineId",8)));
+        when(dao.assignments("outsourcing",1)).thenReturn(List.of(row("id",3)));
+        var result=service.detail(new WorkOrderDetailRequest("000123"));
+        assertEquals("RUNNING",result.summary().statusCode());
+        var head=result.processGroups().getFirst().rows().getFirst();
+        assertEquals("機台（7）",head.name()); assertFalse(head.material().available());
+        assertNull(head.targetQuantity()); assertNull(head.producedQuantity()); assertFalse(head.tolerance().valid());
+        assertTrue(head.actions().get("openFirstArticle").enabled()); assertTrue(head.actions().get("openFieldStatus").enabled());
+        assertFalse(head.actions().get("openFieldStatus").confirmationRequired());
+        var thread=result.processGroups().get(2).rows().getFirst();
+        assertTrue(thread.actions().get("openFieldStatus").confirmationRequired());
+        assertEquals("正式生產",thread.actions().get("openFieldStatus").label());
+        assertEquals("有委外",result.processGroups().get(1).rows().getFirst().rawStatus());
+    }
+    @Test void zeroBlankAndIndependentInspectionFields() {
+        for(String stage:List.of("head","thread")) {
+            var r=complete(stage); assertTrue(missing(stage,r).isEmpty());
+            String field=(stage.equals("head")?HEAD_FIELDS:THREAD_FIELDS).getFirst();
+            for(Object blank:Arrays.asList(null,"","  \t")) {r.put(field,blank);assertEquals(List.of(field),missing(stage,r));}
+            r.put(field,0); assertTrue(missing(stage,r).isEmpty());
+        }
+        assertEquals(11,missing("thread",complete("head")).size());
+        var record=complete("head"); record.put("state",false);
+        var state=row("stage","head","machine_id",7,"requires_first_article",false);
+        var f=firstArticle("head",7L,List.of(record),List.of(state));
+        assertTrue(f.firstArticleCompleted()); assertNull(f.firstArticleCompletedAt());
+        assertEquals("已完成",f.firstArticleCompletedAtDisplay()); assertFalse(f.hasFirstArticleClearance());
+        state.put("completed_at",LocalDateTime.of(2026,10,22,0,0));
+        assertTrue(firstArticle("head",7L,List.of(record),List.of(state)).hasFirstArticleClearance());
+        state.put("requires_first_article",true);
+        assertFalse(firstArticle("head",7L,List.of(record),List.of(state)).firstArticleCompleted());
+        assertFalse(firstArticle("head",7L,List.of(record),List.of(state)).hasFirstArticleClearance());
+        assertFalse(firstArticle("thread",7L,List.of(record),List.of(state)).firstArticleExists());
+    }
+    @Test void duplicateRecordsFailClosedAndUnmigratedRecordsRequireRerun() {
+        var r=complete("head");
+        assertTrue(firstArticle("head",7L,List.of(r),List.of()).requiresFirstArticle());
+        var duplicate=firstArticle("head",7L,List.of(r,r),List.of());
+        assertTrue(duplicate.ambiguous()); assertNull(duplicate.recordId()); assertFalse(duplicate.hasFirstArticleClearance());
+    }
+    @Test void persistedExemptionAndAdditionalAcrossFreshServiceInstances() {
+        for(String column:List.of("exemption_confirmed_at","additional_production_at")) {
+            when(dao.assignments("head",1)).thenReturn(List.of(row("id",1,"machineId",7)));
+            when(dao.states(1)).thenReturn(List.of(row("stage","head","machine_id",7,"requires_first_article",false,column,LocalDateTime.now())));
+            for(int device=0;device<2;device++) assertTrue(new WorkOrderDetailService(dao).detail(new WorkOrderDetailRequest("000123"))
+                    .processGroups().getFirst().rows().getFirst().firstArticle().hasFirstArticleClearance());
+        }
+    }
+    @Test void toleranceUsesQuantitiesAndEightDecimalBoundaries() {
+        var t=tolerance(n("1000"),n("50"),n("50"));
+        assertEquals(0,n("5").compareTo(t.targetOffsetLowerPercent()));
+        assertEquals("950～1,050",t.acceptableRangeDisplay());
+        assertEquals("0～0",tolerance(BigDecimal.ZERO,n("5"),n("5")).acceptableRangeDisplay());
+        assertEquals("100～100",tolerance(n("100.000000004"),null,null).acceptableRangeDisplay());
+        assertEquals(n("101"),tolerance(n("100.000000006"),null,null).minimumQuantity());
+        assertEquals("100～100",tolerance(n("100"),n("0.1"),n("0.1")).acceptableRangeDisplay());
+        assertFalse(tolerance(n("-1"),null,null).valid());
+        assertFalse(tolerance(n("100"),n("101"),null).valid());
+        assertFalse(tolerance(n("100"),null,n("-1")).valid());
+        assertFalse(tolerance(n("9007199254740991"),null,BigDecimal.ONE).valid());
+        assertFalse(tolerance(null,null,null).valid());
+    }
+    @Test void historyFormatsKnownJsonAndPreservesOtherLogs() {
+        when(dao.machines("head")).thenReturn(List.of(row("id",7,"head_machine_name","H")));
+        when(dao.events(1)).thenReturn(List.of(
+            row("id",5,"title","主管派工－打頭","time",LocalDateTime.of(2026,10,22,13,5),"log","{\"machineId\":7,\"targetQuantity\":100,\"targetDownOffsetQuantity\":0.1,\"targetUpOffsetQuantity\":0.2,\"reason\":\"主管確認\"}"),
+            row("id",4,"log","純文字主管"),row("id",3,"log","{bad"),row("id",2,"log","{\"unknown\":1}"),row("id",1,"log","[1,2]")));
+        var events=service.detail(new WorkOrderDetailRequest("000123")).events();
+        assertEquals(List.of(5L,4L,3L,2L,1L),events.stream().map(e->e.id()).toList());
+        assertEquals("派工－打頭",events.getFirst().type());
+        assertTrue(events.getFirst().detail().contains("使用機台：H；預計生產 100 件；可接受的產量為 99.9～100.2 件；原因：確認。"));
+        assertEquals("2026-10-22T13:05:00+08:00",events.getFirst().occurredAt());
+        assertEquals("純文字",events.get(1).detail()); assertEquals("{bad",events.get(2).detail());
+        assertEquals("{\"unknown\":1}",events.get(3).detail()); assertEquals("[1,2]",events.get(4).detail());
+        assertEquals("未提供",events.get(1).occurredAtDisplay());
+    }
+    @Test void getUsesTenSelectsRegardlessOfAssignmentsAndIsReadOnly() throws Exception {
+        var jdbc=mock(NamedParameterJdbcTemplate.class);
+        when(jdbc.queryForList(anyString(),anyMap())).thenAnswer(inv -> {
+            String sql=inv.getArgument(0);
+            if(sql.contains("CAST(work_code")) return List.of(row("id",1,"work_code","000123"));
+            if(sql.contains("work_order_heading_machine")) return java.util.stream.IntStream.range(1,101).mapToObj(i->row("id",i,"machineId",i)).toList();
+            return List.of();
+        });
+        var realDao=new WorkOrderDetailDao(jdbc);
+        var result=new WorkOrderDetailService(realDao).detail(new WorkOrderDetailRequest("000123"));
+        assertEquals(100,result.processGroups().getFirst().rows().size());
+        verify(jdbc,times(10)).queryForList(startsWith("SELECT"),anyMap()); verifyNoMoreInteractions(jdbc);
+        assertTrue(WorkOrderDetailService.class.getMethod("detail",WorkOrderDetailRequest.class).getAnnotation(Transactional.class).readOnly());
+        verify(jdbc).queryForList(contains("first_test_form WHERE work_order_code=:id"),eq(Map.of("id",1L)));
+        verify(jdbc).queryForList(contains("ORDER BY `time` DESC, id DESC"),anyMap());
+    }
+    @Test void http404AndDatabaseErrorsAreNotEmptyLists() throws Exception {
+        var mvc=MockMvcBuilders.standaloneSetup(new WorkOrderDetailController(service,mock(WorkOrderFirstArticleStateService.class))).build();
+        mvc.perform(get("/work-orders/missing/detail")).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNotFound());
+        when(dao.materials()).thenThrow(new DataAccessResourceFailureException("unavailable"));
+        assertThrows(DataAccessResourceFailureException.class,()->service.detail(new WorkOrderDetailRequest("000123")));
+        assertThrows(ResponseStatusException.class,()->new WorkOrderDetailRequest(" "));
+    }
+    @Test void staleExemptionCommandRevalidatesLockedState() {
+        var jdbc=mock(NamedParameterJdbcTemplate.class);
+        when(jdbc.queryForList(anyString(),anyMap())).thenAnswer(inv -> ((String)inv.getArgument(0)).contains("work_order_heading_machine")
+            ? List.of(row("id",2,"machineId",7,"order_closed",1)) : List.of(row("id",1)));
+        var commands=new WorkOrderFirstArticleStateService(jdbc,dao);
+        var ex=assertThrows(ResponseStatusException.class,()->commands.command(new WorkOrderDetailRequest("000123"),"head",2,"exemption",new WorkOrderDetailCommandRequest("其他製程",null)));
+        assertEquals(409,ex.getStatusCode().value()); verify(jdbc,never()).update(anyString(),anyMap());
+    }
+    @Test void prepareIsIdempotentForExistingAndRejectsDuplicates() {
+        var jdbc=mock(NamedParameterJdbcTemplate.class);
+        when(jdbc.queryForList(anyString(),anyMap())).thenAnswer(inv -> ((String)inv.getArgument(0)).contains("work_order_heading_machine")
+            ? List.of(row("id",2,"machineId",7)) : List.of(row("id",1)));
+        var commands=new WorkOrderFirstArticleStateService(jdbc,dao);
+        when(dao.firstArticles(1)).thenReturn(List.of(complete("head")));
+        commands.command(new WorkOrderDetailRequest("000123"),"head",2,"prepare",null);
+        verify(jdbc,never()).update(anyString(),anyMap());
+        when(dao.firstArticles(1)).thenReturn(List.of(complete("head"),complete("head")));
+        assertThrows(ResponseStatusException.class,()->commands.command(new WorkOrderDetailRequest("000123"),"head",2,"prepare",null));
+    }
+    @Test void productionStartChecksServerClearanceBeforeWrite() {
+        var jdbc=mock(NamedParameterJdbcTemplate.class);
+        var state=mock(WorkOrderFirstArticleStateService.class);
+        var production=new ProductionFlowService(jdbc);
+        ReflectionTestUtils.setField(production,"firstArticleState",state);
+        var assignment=row("id",2,"work_order_code",1,"machineId",7,"order_closed",0);
+        when(jdbc.queryForList(anyString(),anyMap())).thenReturn(List.of(assignment));
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT)).when(state).validateProductionClearance("head",assignment);
+        assertThrows(ResponseStatusException.class,()->production.startProduction(ProductionFlowService.Process.HEADING,2));
+        verify(jdbc,never()).update(anyString(),anyMap());
+    }
+}

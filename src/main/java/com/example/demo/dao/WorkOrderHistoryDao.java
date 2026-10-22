@@ -1,5 +1,7 @@
 package com.example.demo.dao;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.WorkOrderHistoryQuery;
 import com.example.demo.dto.WorkOrderHistoryRow;
 import org.springframework.jdbc.core.RowMapper;
@@ -13,6 +15,7 @@ import java.util.Map;
 @Component
 public class WorkOrderHistoryDao {
     private final NamedParameterJdbcTemplate jdbc;
+    @Autowired
     public WorkOrderHistoryDao(NamedParameterJdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     // Identifiers below are constants, never request input. LEFT JOIN retains orphan assignments.

@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dao.WorkOrderThreadingMachineDao;
 import com.example.demo.dto.ThreadingProductionAssignmentResponse;
 import com.example.demo.dto.WorkOrderThreadingMachineRequest;
@@ -15,6 +17,7 @@ import java.util.Optional;
 public class WorkOrderThreadingMachineService {
     private final WorkOrderThreadingMachineDao dao;
 
+    @Autowired
     public WorkOrderThreadingMachineService(WorkOrderThreadingMachineDao dao) {
         this.dao = dao;
     }

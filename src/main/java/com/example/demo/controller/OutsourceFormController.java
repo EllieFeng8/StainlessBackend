@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.OutsourceFormRequest;
 import com.example.demo.model.OutsourceForm;
@@ -23,6 +25,7 @@ import java.util.List;
 public class OutsourceFormController {
     private final OutsourceFormService service;
 
+    @Autowired
     public OutsourceFormController(OutsourceFormService service) {
         this.service = service;
     }

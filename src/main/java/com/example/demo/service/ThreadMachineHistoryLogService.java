@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dao.ThreadMachineHistoryLogDao;
 import com.example.demo.dto.ThreadMachineHistoryLogRequest;
 import com.example.demo.model.ThreadMachineHistoryLog;
@@ -14,6 +16,7 @@ import java.util.Optional;
 public class ThreadMachineHistoryLogService {
     private final ThreadMachineHistoryLogDao dao;
 
+    @Autowired
     public ThreadMachineHistoryLogService(ThreadMachineHistoryLogDao dao) {
         this.dao = dao;
     }

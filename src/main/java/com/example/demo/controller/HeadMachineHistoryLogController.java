@@ -1,5 +1,7 @@
 package com.example.demo.controller;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.HeadMachineHistoryLogRequest;
 import com.example.demo.model.HeadMachineHistoryLog;
@@ -21,6 +23,7 @@ import java.util.List;
 public class HeadMachineHistoryLogController {
     private final HeadMachineHistoryLogService service;
 
+    @Autowired
     public HeadMachineHistoryLogController(HeadMachineHistoryLogService service) {
         this.service = service;
     }

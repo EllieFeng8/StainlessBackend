@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.example.demo.dao.OutsourceFormDao;
 import com.example.demo.dto.OutsourceFormRequest;
 import com.example.demo.model.OutsourceForm;
@@ -15,6 +17,7 @@ import java.util.Optional;
 public class OutsourceFormService {
     private final OutsourceFormDao dao;
 
+    @Autowired
     public OutsourceFormService(OutsourceFormDao dao) {
         this.dao = dao;
     }
