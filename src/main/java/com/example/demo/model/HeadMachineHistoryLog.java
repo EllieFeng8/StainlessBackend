@@ -13,4 +13,5 @@ public class HeadMachineHistoryLog {
     String title;
     LocalDateTime time;
     String log;
+    Integer state;
 }

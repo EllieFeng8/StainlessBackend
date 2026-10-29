@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 
 @Getter
@@ -21,4 +22,10 @@ public class MaterialHistoryForm {
     float remainingMaterial;
     String remark;
     String recordBy;
+    BigDecimal targetValue;
+    BigDecimal alertUpperLimit;
+    BigDecimal alertLowerLimit;
+    String machineCode;
+    String dieNumber;
+    String moldNumber;
 }

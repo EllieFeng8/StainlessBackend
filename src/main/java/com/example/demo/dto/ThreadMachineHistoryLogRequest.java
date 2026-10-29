@@ -6,5 +6,7 @@ public record ThreadMachineHistoryLogRequest(
         String title,
         Date time,
         Integer machineId,
-        String log) {
+        String log,
+        @tools.jackson.databind.annotation.JsonDeserialize(using = MachineHistoryStateDeserializer.class)
+        Integer state) {
 }

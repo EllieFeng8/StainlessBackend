@@ -118,9 +118,9 @@ clearance = !requires && (有效完成時間 || 免首檢時間 || 追加生產�
 
 ## 操作與命令
 
-每個 action 包含 `visible, enabled, label, reasonCode, reasonMessage, confirmationRequired, confirmationMessage, targetType, workOrderCode, workOrderDatabaseId, stage, assignmentId, machineId, firstArticleId`。導覽操作一律保留已結單可查看行為。openFieldStatus 的 enabled **不是可開工授權**。requires=true 時仍可導覽，正式生產寫入會阻擋未放行。
+每個 action 包含 `visible, enabled, label, reasonCode, reasonMessage, confirmationRequired, confirmationMessage, targetType, workOrderCode, workOrderDatabaseId, stage, assignmentId, machineId, firstArticleId`。導覽操作一律保留已結單可查看行為。首件未放行不阻擋正式生產：開始生產或狀態切換為生產中時，在 history_log 記錄「生產流程－未完成首件放行」，包含派工、製程、機台及未放行即進入生產的說明，不寫入首件狀態明細。首件完成／免檢狀態不會因此被改寫。原有結單及資料驗證仍適用。
 
-targetType FIRST_ARTICLE：先呼叫 prepare 取得 recordId，再導向首件頁。FIELD_STATUS：直接導覽現場頁；若 confirmationRequired，先顯示後端文案、取得原因並呼叫 exemption，成功再導覽。FIRST_ARTICLE_EXEMPTION：免首檢寫入。前端只解讀描述與識別碼，不重算條件。
+targetType FIRST_ARTICLE：先呼叫 prepare 取得 recordId，再導向首件頁。FIELD_STATUS：直接導覽現場頁，confirmationRequired=false，不必先執行 exemption。前端不得依 requiresFirstArticle 或 hasFirstArticleClearance 阻擋生產；requiresFirstArticle 也不代表曾回報模具／牙板異常。FIRST_ARTICLE_EXEMPTION：保留可選的免首檢寫入。前端只解讀描述與識別碼，不重算條件。
 
 新命令共用前綴：
 
@@ -130,7 +130,7 @@ targetType FIRST_ARTICLE：先呼叫 prepare 取得 recordId，再導向首件�
 |---|---|---|
 | prepare | 無 | 工單、派工、製程歸屬；無紀錄時建立、已有唯一紀錄則回原 ID；重複 409 |
 | rerun | `{"reason":"換模重檢"}` | 必須有原因，鎖定目前派工後要求重跑並撤銷放行 |
-| exemption | `{"reason":"其他製程"}` | 原因僅允許其他製程／委外／盤元異常補領；重新檢查等待生產、未放行、requires=false |
+| exemption | `{}` 或 `{"reason":"其他製程"}` | 未提供 body、reason 為 null 或空白時預設其他製程；原因僅允許其他製程／委外／盤元異常補領；重新檢查等待生產、未放行、requires=false |
 | additional-production | `{"reason":"追加訂單","targetQuantity":1200}` | 僅完成正常／異常結單，目標大於原目標及 current、允收有效；保留重跑要求 |
 
 成功 200：

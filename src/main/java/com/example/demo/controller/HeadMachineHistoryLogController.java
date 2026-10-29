@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -50,5 +52,19 @@ public class HeadMachineHistoryLogController {
     @GetMapping("/getHeadMachineHistoryLogByMachine")
     public List<HeadMachineHistoryLog> getHeadMachineHistoryLogsByMachine(@RequestParam("machineId") int machineId) {
         return service.getHeadMachineHistoryLogsByMachine(machineId);
+    }
+
+    @PatchMapping("/updateHeadMachineHistoryLog/{id}")
+    public ResponseEntity<ApiResponse<Void>> updateHeadMachineHistoryLog(
+            @PathVariable("id") int id, @RequestBody HeadMachineHistoryLogRequest request) {
+        service.updateHeadMachineHistoryLog(id, request);
+        return ResponseEntity.ok(ApiResponse.success("OK"));
+    }
+
+    @PutMapping("/updateHeadMachineHistoryLog/{id}")
+    public ResponseEntity<ApiResponse<Void>> replaceHeadMachineHistoryLog(
+            @PathVariable("id") int id, @RequestBody HeadMachineHistoryLogRequest request) {
+        service.replaceHeadMachineHistoryLog(id, request);
+        return ResponseEntity.ok(ApiResponse.success("OK"));
     }
 }

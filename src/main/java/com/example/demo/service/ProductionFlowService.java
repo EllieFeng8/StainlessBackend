@@ -39,15 +39,18 @@ public class ProductionFlowService {
         var row = rows.getFirst();
         int closed = row.get("order_closed") == null ? 0 : ((Number) row.get("order_closed")).intValue();
         conflict(closed == 0, "已結單或審核中的派工不可開始生產");
-        firstArticleState.validateProductionClearance(process.prefix, row);
+        conflict(row.get("started_at") == null, "派工已開工，恢復生產請使用狀態更新 API");
+        firstArticleState.recordProductionWithoutClearance(process.prefix, row);
         jdbc.update("UPDATE mydb." + process.table
                         + " SET production_status=:status, started_at=:now WHERE id=:id",
                 Map.of("status", "生產中", "id", id,
                         "now", java.time.LocalDateTime.now(WorkOrderDetailService.ZONE)));
+        addMachineHistory(process, row, "生產中", row.get("reason"), 2);
     }
 
     @Transactional
     public void execute(Process process, int id, String action, ProductionFlowRequest r) {
+        MachineHistoryState.validate(r.state());
         if ("start".equals(action)) {
             startProduction(process, id);
             return;
@@ -61,7 +64,7 @@ public class ProductionFlowService {
         Map<String, Object> fields = new LinkedHashMap<>();
         switch (action) {
             case "status" -> {
-                if ("生產中".equals(r.productionStatus())) firstArticleState.validateProductionClearance(process.prefix, row);
+                if ("生產中".equals(r.productionStatus())) firstArticleState.recordProductionWithoutClearance(process.prefix, row);
                 require(!"開始生產".equals(r.productionStatus()), "開始生產請使用 /production/start API");
                 conflict(closed == 0 && row.get("started_at") != null, "僅生產中的派工可變更狀態");
                 require(r.productionStatus() != null && STATUSES.contains(r.productionStatus()), "不支援的 productionStatus");
@@ -100,13 +103,8 @@ public class ProductionFlowService {
                     conflict(row.get("started_at") != null, "尚未開工的派工不可再次結單");
                     String opinion = text(r.opinion()) ? r.opinion() : r.remark();
                     require(r.approved() != null && text(opinion), "審核人員再次結單需填 approved 與 opinion");
-                    if (r.endAt() != null) {
-                        Object startedAt = row.get("started_at");
-                        Date startedDate = startedAt instanceof java.time.LocalDateTime local
-                                ? java.sql.Timestamp.valueOf(local) : (Date) startedAt;
-                        require(!r.endAt().before(startedDate), "endAt 不可早於開始時間");
-                        fields.put("end_at", r.endAt());
-                    }
+                    // Review changes retain the original production end, not the review time.
+                    fields.put("end_at", closingTime(row));
                     if (r.materialLoss() != null) {
                         nonnegative(r.materialLoss(), "materialLoss");
                         fields.put("material_loss", r.materialLoss());
@@ -133,12 +131,7 @@ public class ProductionFlowService {
                 conflict(row.get("started_at") != null
                         && (closed == 0 || closed == 1 || (closed == 2 && rejected)),
                         "僅已開工且未結單、正常結單或異常結單審核退回的派工可提交結單");
-                require(r.endAt() != null, "endAt 必填");
-                Object startedAt = row.get("started_at");
-                // MySQL DATETIME is returned as LocalDateTime by getObject/queryForList.
-                Date startedDate = startedAt instanceof java.time.LocalDateTime local
-                        ? java.sql.Timestamp.valueOf(local) : (Date) startedAt;
-                require(!r.endAt().before(startedDate), "endAt 不可早於開始時間");
+                var endAt = closingTime(row);
                 nonnegative(r.materialLoss(), "materialLoss");
                 nonnegative(r.remainingMaterial(), "remainingMaterial");
                 if (r.orderClosed() == 2) require(text(r.reason()) && text(r.remark()), "異常結單需填 reason 與 remark");
@@ -147,7 +140,7 @@ public class ProductionFlowService {
                 fields.put("approved", r.orderClosed() == 1 ? Boolean.TRUE : null);
                 fields.put("reviewer", null);
                 fields.put("opinion", null);
-                fields.put("end_at", r.endAt());
+                fields.put("end_at", endAt);
                 if (r.employeeCode() != null) {
                     require(text(r.employeeCode()), "employee_code 不可為空白");
                     fields.put("employee_code", r.employeeCode());
@@ -179,6 +172,12 @@ public class ProductionFlowService {
             }
             default -> throw new ResponseStatusException(HttpStatus.NOT_FOUND, "未知流程動作");
         }
+        if ("close".equals(action)) {
+            // Keep the original result on resubmission; later machine events belong to other work.
+            fields.put("oee", closed != 0 && row.get("end_at") != null && row.get("oee") != null
+                    ? row.get("oee")
+                    : calculateOee(process, row, localTime(fields.get("end_at"))));
+        }
         String assignments = fields.keySet().stream().map(k -> k + "=:" + k).collect(java.util.stream.Collectors.joining(","));
         Map<String, Object> params = new HashMap<>(fields);
         params.put("id", id);
@@ -193,17 +192,86 @@ public class ProductionFlowService {
         jdbc.update("INSERT INTO mydb.history_log (title, `time`, work_order_code, log) VALUES (:title,CURRENT_TIMESTAMP,:work,:log)",
                 Map.of("title", "生產流程－" + action, "work", row.get("work_order_code"),
                         "log", log));
+        Object productionStatus = fields.containsKey("production_status")
+                ? fields.get("production_status") : row.get("production_status");
+        boolean closing = "close".equals(action);
+        Object machineLog = closing ? (r.orderClosed() == 1 ? "正常結單" : "異常結單")
+                : (fields.containsKey("reason") ? fields.get("reason") : row.get("reason"));
+        Integer machineState = closing ? 2 : MachineHistoryState.forProductionStatus(productionStatus, r.state());
+        addMachineHistory(process, row, productionStatus, machineLog, machineState);
+    }
+
+    private void addMachineHistory(Process process, Map<String, Object> row,
+                                   Object status, Object reason, Integer state) {
         String historyTable = process == Process.HEADING
                 ? "head_machine_history_log" : "thread_machine_history_log";
         // Store the effective production status/reason, including an explicitly cleared reason.
         Map<String, Object> machineHistory = new HashMap<>();
-        machineHistory.put("title", fields.containsKey("production_status")
-                ? fields.get("production_status") : row.get("production_status"));
-        machineHistory.put("log", fields.containsKey("reason") ? fields.get("reason") : row.get("reason"));
+        machineHistory.put("title", status);
+        machineHistory.put("log", reason);
         machineHistory.put("machine", row.get("machineId"));
-        jdbc.update("INSERT INTO mydb." + historyTable + " (title, `time`, machine_id, log)"
-                            + " VALUES (:title,CURRENT_TIMESTAMP,:machine,:log)",
+        machineHistory.put("state", state);
+        machineHistory.put("eventTime", java.time.LocalDateTime.now(WorkOrderDetailService.ZONE));
+        jdbc.update("INSERT INTO mydb." + historyTable + " (title, `time`, machine_id, log, state)"
+                            + " VALUES (:title,:eventTime,:machine,:log,:state)",
                     machineHistory);
+    }
+
+    record MachineEvent(java.time.LocalDateTime time, Integer state) {}
+
+    private java.math.BigDecimal calculateOee(Process process, Map<String, Object> row,
+                                             java.time.LocalDateTime end) {
+        var start = localTime(row.get("started_at"));
+        String table = process == Process.HEADING ? "head_machine_history_log" : "thread_machine_history_log";
+        // Fetch the last state at/before start plus all changes within [start, end).
+        // IDs make equal-time events deterministic; the last event at that time wins.
+        var events = jdbc.query("SELECT `time`, state FROM ("
+                        + "(SELECT id, `time`, state FROM mydb." + table
+                        + " WHERE machine_id=:machine AND `time`<=:start ORDER BY `time` DESC, id DESC LIMIT 1)"
+                        + " UNION ALL SELECT id, `time`, state FROM mydb." + table
+                        + " WHERE machine_id=:machine AND `time`>:start AND `time`<:end"
+                        + ") events ORDER BY `time`, id",
+                Map.of("machine", row.get("machineId"), "start", start, "end", end),
+                (rs, index) -> new MachineEvent(rs.getObject("time", java.time.LocalDateTime.class),
+                        rs.getObject("state", Integer.class)));
+        return runningPercentage(start, end, events);
+    }
+
+    static java.math.BigDecimal runningPercentage(java.time.LocalDateTime start,
+                                                  java.time.LocalDateTime end, List<MachineEvent> events) {
+        long total = java.time.Duration.between(start, end).toMillis();
+        if (total <= 0) return java.math.BigDecimal.ZERO;
+        long running = 0;
+        var cursor = start;
+        Integer state = null;
+        for (var event : events) {
+            if (!event.time().isBefore(end)) break;
+            var boundary = event.time().isBefore(start) ? start : event.time();
+            if (Integer.valueOf(2).equals(state)) {
+                running += java.time.Duration.between(cursor, boundary).toMillis();
+            }
+            cursor = boundary;
+            state = event.state();
+        }
+        if (Integer.valueOf(2).equals(state)) running += java.time.Duration.between(cursor, end).toMillis();
+        return java.math.BigDecimal.valueOf(running).multiply(java.math.BigDecimal.valueOf(100))
+                .divide(java.math.BigDecimal.valueOf(total), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static java.time.LocalDateTime closingTime(Map<String, Object> row) {
+        // Preserve the first close time on resubmission or review reclassification.
+        Object previousEnd = row.get("end_at");
+        int closed = row.get("order_closed") instanceof Number n ? n.intValue() : 0;
+        var end = closed != 0 && previousEnd != null ? localTime(previousEnd)
+                : java.time.LocalDateTime.now(WorkOrderDetailService.ZONE);
+        require(!end.isBefore(localTime(row.get("started_at"))), "結束時間不可早於開始時間");
+        return end;
+    }
+
+    private static java.time.LocalDateTime localTime(Object value) {
+        if (value instanceof java.time.LocalDateTime local) return local;
+        if (value instanceof java.sql.Timestamp timestamp) return timestamp.toLocalDateTime();
+        return ((Date) value).toInstant().atZone(WorkOrderDetailService.ZONE).toLocalDateTime();
     }
 
     private static boolean text(String value) { return value != null && !value.isBlank(); }

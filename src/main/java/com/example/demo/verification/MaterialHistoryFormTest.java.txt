@@ -1,0 +1,167 @@
+package com.example.demo.service;
+
+import com.example.demo.controller.MaterialHistoryFormController;
+import com.example.demo.dao.MaterialHistoryFormDao;
+import com.example.demo.rowMapper.MaterialHistoryFormRowMapper;
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class MaterialHistoryFormTest {
+    @Test void patchMoldLimitsByWorkOrderAndMachine() throws Exception {
+        when(jdbc.update(anyString(), any(java.util.Map.class))).thenReturn(2);
+        mvc.perform(patch("/materialHistory/updateMoldLimits").contentType("application/json")
+                .content("{\"workOrderCode\":1,\"machine_code\":\"PRESS-42\",\"target_value\":20000,\"alert_upper_limit\":19000,\"alert_lower_limit\":18000}"))
+                .andExpect(status().isOk());
+        verify(jdbc).update(eq("UPDATE mydb.material_history_form SET target_value = :target_value, alert_upper_limit = :alert_upper_limit, alert_lower_limit = :alert_lower_limit, updated_at = CURRENT_TIMESTAMP() WHERE work_oder_code = :workOrderCode AND machine_code = :machineCode AND mold_number IS NOT NULL AND TRIM(mold_number) <> ''"),
+                eq(java.util.Map.of("workOrderCode",1,"machineCode","PRESS-42","target_value",new BigDecimal("20000"),
+                        "alert_upper_limit",new BigDecimal("19000"),"alert_lower_limit",new BigDecimal("18000"))));
+    }
+    @Test void patchMoldLimitsValidatesSelectorAndEmptyUpdates() throws Exception {
+        for (String body : List.of("{}", "{\"machine_code\":\"A\",\"target_value\":1}",
+                "{\"workOrderCode\":0,\"machine_code\":\"A\",\"target_value\":1}",
+                "{\"workOrderCode\":1,\"machine_code\":\"   \",\"target_value\":1}",
+                "{\"workOrderCode\":1,\"machine_code\":\"A\",\"target_value\":null}")) {
+            mvc.perform(patch("/materialHistory/updateMoldLimits").contentType("application/json").content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(jdbc);
+    }
+    @Test void patchMoldLimitsMissingAndUnchanged() throws Exception {
+        String body = "{\"work_order_code\":1,\"machineCode\":\"A\",\"targetValue\":0}";
+        mvc.perform(patch("/materialHistory/updateMoldLimits").contentType("application/json").content(body))
+                .andExpect(status().isNotFound());
+        when(jdbc.queryForObject(anyString(), any(java.util.Map.class), eq(Integer.class))).thenReturn(1);
+        mvc.perform(patch("/materialHistory/updateMoldLimits").contentType("application/json").content(body))
+                .andExpect(status().isOk());
+        verify(jdbc, times(2)).update(contains("SET target_value = :target_value, updated_at"),
+                eq(java.util.Map.of("workOrderCode",1,"machineCode","A","target_value",BigDecimal.ZERO)));
+    }
+    final NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+    final MaterialHistoryFormDao dao = new MaterialHistoryFormDao(jdbc);
+    final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+            new MaterialHistoryFormController(new MaterialHistoryFormService(dao))).build();
+
+    void creation(String body, String target, String upper, String lower) throws Exception {
+        when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+        mvc.perform(post("/materialHistory/addMaterialHistory")
+                .contentType("application/json").content(body)).andExpect(status().isCreated());
+        var params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).update(contains("target_value, alert_upper_limit, alert_lower_limit"), params.capture());
+        assertDecimal(target, params.getValue().getValue("targetValue"));
+        assertDecimal(upper, params.getValue().getValue("alertUpperLimit"));
+        assertDecimal(lower, params.getValue().getValue("alertLowerLimit"));
+    }
+    void assertDecimal(String expected, Object actual) {
+        if (expected == null) assertNull(actual);
+        else assertEquals(0, new BigDecimal(expected).compareTo((BigDecimal)actual));
+    }
+    @Test void noMoldDoesNotSetLimits() throws Exception {
+        for (String fields : List.of("", ",\"die_number\":\"D-001\"", ",\"mold_number\":null",
+                ",\"mold_number\":\"\"", ",\"mold_number\":\"   \"",
+                ",\"target_value\":20000,\"alert_upper_limit\":19000,\"alert_lower_limit\":18000")) {
+            reset(jdbc);
+            creation("{\"workOrderCode\":1" + fields + "}", null, null, null);
+        }
+    }
+    @Test void postDieAndMoldAliases() throws Exception {
+        for (String[] names : List.of(new String[]{"die_number", "mold_number"}, new String[]{"dieNumber", "moldNumber"})) {
+            reset(jdbc);
+            creation("{\"workOrderCode\":1,\"" + names[0] + "\":\"D-001\",\"" + names[1] + "\":\"M-002\"}", "10000", "9500", "9000");
+            verify(jdbc).update(contains("die_number, mold_number"), argThat((SqlParameterSource p) ->
+                    "D-001".equals(p.getValue("dieNumber")) && "M-002".equals(p.getValue("moldNumber"))));
+        }
+    }
+    @Test void patchDieAndMoldDoesNotResetLimits() throws Exception {
+        for (String[] names : List.of(new String[]{"die_number", "mold_number"}, new String[]{"dieNumber", "moldNumber"})) {
+            reset(jdbc);
+            when(jdbc.update(anyString(), any(java.util.Map.class))).thenReturn(1);
+            mvc.perform(patch("/materialHistory/updateMaterialHistory/5").contentType("application/json")
+                    .content("{\"" + names[0] + "\":\"D-001\",\"" + names[1] + "\":\"M-002\"}"))
+                    .andExpect(status().isOk());
+            verify(jdbc).update(eq("UPDATE mydb.material_history_form SET die_number = :die_number, mold_number = :mold_number, updated_at = CURRENT_TIMESTAMP() WHERE material_id = :id"),
+                    eq(java.util.Map.of("die_number","D-001","mold_number","M-002","id",5)));
+        }
+    }
+    @Test void omittedDefaults() throws Exception {
+        creation("{\"workOrderCode\":1,\"mold_number\":\"M-001\"}", "10000", "9500", "9000");
+        verify(jdbc).update(anyString(), argThat((SqlParameterSource p) ->
+                p.hasValue("machineCode") && p.getValue("machineCode") == null));
+    }
+    @Test void postMachineCodeAliases() throws Exception {
+        for (String name : List.of("machine_code", "machineCode")) {
+            reset(jdbc);
+            creation("{\"workOrderCode\":1,\"" + name + "\":\"PRESS-42\"}", null, null, null);
+            verify(jdbc).update(contains("machine_code"), argThat((SqlParameterSource p) ->
+                    "PRESS-42".equals(p.getValue("machineCode"))));
+        }
+    }
+    @Test void patchMachineCodeAliases() throws Exception {
+        for (String name : List.of("machine_code", "machineCode")) {
+            reset(jdbc);
+            when(jdbc.update(anyString(), any(java.util.Map.class))).thenReturn(1);
+            mvc.perform(patch("/materialHistory/updateMaterialHistory/5").contentType("application/json")
+                    .content("{\"" + name + "\":\"PRESS-42\"}")).andExpect(status().isOk());
+            verify(jdbc).update(eq("UPDATE mydb.material_history_form SET machine_code = :machine_code, updated_at = CURRENT_TIMESTAMP() WHERE material_id = :id"),
+                    eq(java.util.Map.of("machine_code","PRESS-42","id",5)));
+        }
+    }
+    @Test void missingMachineRemainsNullWhenRead() throws Exception {
+        assertNull(new MaterialHistoryFormRowMapper().mapRow(mock(ResultSet.class),0).getMachineCode());
+    }
+    @Test void customTargetSnakeCase() throws Exception {
+        creation("{\"workOrderCode\":1,\"mold_number\":\"M-001\",\"target_value\":20000}", "20000", "19000", "18000");
+    }
+    @Test void explicitAndZeroCamelCase() throws Exception {
+        creation("{\"workOrderCode\":1,\"moldNumber\":\"M-001\",\"targetValue\":123.45,\"alertUpperLimit\":0,\"alertLowerLimit\":12}", "123.45", "0", "12");
+    }
+    @Test void individualLimitAndNull() throws Exception {
+        creation("{\"workOrderCode\":1,\"mold_number\":\"M-001\",\"target_value\":null,\"alert_upper_limit\":7,\"alert_lower_limit\":null}", "10000", "7", "9000");
+    }
+    @Test void decimalPercentages() throws Exception {
+        creation("{\"workOrderCode\":1,\"mold_number\":\"M-001\",\"target_value\":123.45}", "123.45", "117.2775", "111.105");
+    }
+    @Test void patchDoesNotResetLimits() throws Exception {
+        when(jdbc.update(anyString(), any(java.util.Map.class))).thenReturn(1);
+        mvc.perform(patch("/materialHistory/updateMaterialHistory/5").contentType("application/json")
+                .content("{\"target_value\":20000}" )).andExpect(status().isOk());
+        verify(jdbc).update(eq("UPDATE mydb.material_history_form SET target_value = :target_value, updated_at = CURRENT_TIMESTAMP() WHERE material_id = :id"),
+                eq(java.util.Map.of("target_value",new BigDecimal("20000"),"id",5)));
+    }
+    @Test void patchLimitsIndependently() throws Exception {
+        when(jdbc.update(anyString(), any(java.util.Map.class))).thenReturn(1);
+        mvc.perform(patch("/materialHistory/updateMaterialHistory/5").contentType("application/json")
+                .content("{\"alert_upper_limit\":0,\"alert_lower_limit\":12}" )).andExpect(status().isOk());
+        verify(jdbc).update(anyString(), eq(java.util.Map.of("alert_upper_limit",BigDecimal.ZERO,"alert_lower_limit",new BigDecimal("12"),"id",5)));
+    }
+    @Test void getMapsAndSerializesValues() throws Exception {
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.getBigDecimal("target_value")).thenReturn(new BigDecimal("20000"));
+        when(rs.getBigDecimal("alert_upper_limit")).thenReturn(new BigDecimal("19000"));
+        when(rs.getBigDecimal("alert_lower_limit")).thenReturn(new BigDecimal("18000"));
+        when(rs.getString("machine_code")).thenReturn("PRESS-42");
+        when(rs.getString("die_number")).thenReturn("D-001");
+        when(rs.getString("mold_number")).thenReturn("M-002");
+        var form = new MaterialHistoryFormRowMapper().mapRow(rs,0);
+        MaterialHistoryFormService service = mock(MaterialHistoryFormService.class);
+        when(service.getMaterialHistoryForms()).thenReturn(List.of(form));
+        MockMvcBuilders.standaloneSetup(new MaterialHistoryFormController(service)).build()
+                .perform(get("/materialHistory/getMaterialHistory")).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].targetValue").value(20000))
+                .andExpect(jsonPath("$[0].alertUpperLimit").value(19000))
+                .andExpect(jsonPath("$[0].alertLowerLimit").value(18000))
+                .andExpect(jsonPath("$[0].machineCode").value("PRESS-42"))
+                .andExpect(jsonPath("$[0].dieNumber").value("D-001"))
+                .andExpect(jsonPath("$[0].moldNumber").value("M-002"));
+    }
+}

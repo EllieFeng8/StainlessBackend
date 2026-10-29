@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.example.demo.dto.ApiResponse;
 import com.example.demo.dto.MaterialHistoryFormRequest;
+import com.example.demo.dto.MaterialHistoryMoldLimitsRequest;
 import com.example.demo.model.MaterialHistoryForm;
 import com.example.demo.service.MaterialHistoryFormService;
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,13 @@ public class MaterialHistoryFormController {
     public ResponseEntity<ApiResponse<Void>> updateMaterialHistoryForm(
             @PathVariable("id") int id, @RequestBody MaterialHistoryFormRequest request) {
         service.updateMaterialHistoryForm(id, request);
+        return ResponseEntity.ok(ApiResponse.success("OK"));
+    }
+
+    @PatchMapping("/updateMoldLimits")
+    public ResponseEntity<ApiResponse<Void>> updateMoldLimits(
+            @RequestBody MaterialHistoryMoldLimitsRequest request) {
+        service.updateMoldLimits(request);
         return ResponseEntity.ok(ApiResponse.success("OK"));
     }
 

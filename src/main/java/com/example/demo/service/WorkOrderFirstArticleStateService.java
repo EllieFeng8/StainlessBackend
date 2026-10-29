@@ -38,6 +38,9 @@ public class WorkOrderFirstArticleStateService {
     }
     @Transactional
     public CommandResult command(WorkOrderDetailRequest query,String stage,long assignment,String action,WorkOrderDetailCommandRequest request) {
+        if ("exemption".equals(action) && (request==null || request.reason()==null || request.reason().isBlank())) {
+            request=new WorkOrderDetailCommandRequest("其他製程",request==null ? null : request.targetQuantity());
+        }
         require(List.of("head","thread").contains(stage) && assignment>0,"stage 僅允許 head/thread；派工 ID 必須為正數");
         var orders=dao.order(query.workOrderCode());
         if (orders.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"工單不存在");
@@ -130,10 +133,15 @@ public class WorkOrderFirstArticleStateService {
         if(rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"首件不存在");
         lockOrder(id(rows.getFirst(),"work_order_code"));
     }
-    public void validateProductionClearance(String stage,Map<String,Object> row) {
+    public void recordProductionWithoutClearance(String stage,Map<String,Object> row) {
         long work=id(row,"work_order_code");
         var first=firstArticle(stage,nullableId(row,"machineId"),dao.firstArticles(work),dao.states(work));
-        conflict(first.hasFirstArticleClearance(),"尚未取得首件放行資格，請完成首件或確認符合免首檢條件");
+        if (!first.hasFirstArticleClearance()) {
+            String log="派工 "+row.get("id")+"；製程="+stage+"；機台="+row.get("machineId")
+                    +"；未依首件流程放行即進入生產";
+            jdbc.update("INSERT INTO mydb.history_log (title,`time`,work_order_code,log) VALUES (:title,:now,:work,:log)",
+                    Map.of("title","生產流程－未完成首件放行", "now",LocalDateTime.now(ZONE),"work",work,"log",log));
+        }
     }
     private static void require(boolean ok,String message) { if(!ok) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,message); }
     private static void conflict(boolean ok,String message) { if(!ok) throw new ResponseStatusException(HttpStatus.CONFLICT,message); }

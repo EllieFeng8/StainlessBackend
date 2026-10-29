@@ -16,4 +16,6 @@ public record ProductionFlowRequest(
         @JsonAlias("material_loss") Double materialLoss,
         @JsonAlias("remaining_material") Double remainingMaterial,
         Boolean approved, String reviewer, String opinion,
-        @JsonAlias("employee_code") String employeeCode) {}
+        @JsonAlias("employee_code") String employeeCode,
+        @tools.jackson.databind.annotation.JsonDeserialize(using = MachineHistoryStateDeserializer.class)
+        Integer state) {}

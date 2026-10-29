@@ -22,6 +22,7 @@ public class HeadMachineHistoryLogService {
     }
 
     public int addHeadMachineHistoryLog(HeadMachineHistoryLogRequest request) {
+        MachineHistoryState.validate(request.state());
         if (request.machineId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "machineId is required");
         }
@@ -38,5 +39,26 @@ public class HeadMachineHistoryLogService {
 
     public List<HeadMachineHistoryLog> getHeadMachineHistoryLogsByMachine(int machineId) {
         return dao.getHeadMachineHistoryLogsByMachine(machineId);
+    }
+
+    public void updateHeadMachineHistoryLog(int id, HeadMachineHistoryLogRequest request) {
+        MachineHistoryState.validate(request.state());
+        if (request.title() == null && request.time() == null && request.machineId() == null
+                && request.log() == null && request.state() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one field is required");
+        }
+        if (dao.updateHeadMachineHistoryLog(id, request) == 0 && dao.getHeadMachineHistoryLog(id).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Machine history log not found");
+        }
+    }
+
+    public void replaceHeadMachineHistoryLog(int id, HeadMachineHistoryLogRequest request) {
+        MachineHistoryState.validate(request.state());
+        if (request.machineId() == null || request.time() == null || request.state() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PUT requires machineId, time and state");
+        }
+        if (dao.replaceHeadMachineHistoryLog(id, request) == 0 && dao.getHeadMachineHistoryLog(id).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Machine history log not found");
+        }
     }
 }

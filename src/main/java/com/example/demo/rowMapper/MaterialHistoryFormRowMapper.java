@@ -22,6 +22,12 @@ public class MaterialHistoryFormRowMapper implements RowMapper<MaterialHistoryFo
         form.setRemainingMaterial(rs.getFloat("remaining_material"));
         form.setRemark(rs.getString("remark"));
         form.setRecordBy(rs.getString("record_by"));
+        form.setTargetValue(rs.getBigDecimal("target_value"));
+        form.setAlertUpperLimit(rs.getBigDecimal("alert_upper_limit"));
+        form.setAlertLowerLimit(rs.getBigDecimal("alert_lower_limit"));
+        form.setMachineCode(rs.getString("machine_code"));
+        form.setDieNumber(rs.getString("die_number"));
+        form.setMoldNumber(rs.getString("mold_number"));
         return form;
     }
 }

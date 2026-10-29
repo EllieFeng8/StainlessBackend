@@ -175,7 +175,7 @@ public class WorkOrderDetailService {
         actions.put("openFirstArticle",action(order,stage,assignment,machine,first,true,true,
                 first.firstArticleCompleted() && !first.requiresFirstArticle() ? "完成首件檢測" : "首件檢測",false,"FIRST_ARTICLE",null));
         actions.put("openFieldStatus",action(order,stage,assignment,machine,first,true,true,
-                status.statusCode().equals("READY") ? "正式生產" : status.statusLabel(),confirmation,"FIELD_STATUS",null));
+                status.statusCode().equals("READY") ? "正式生產" : status.statusLabel(),false,"FIELD_STATUS",null));
         actions.put("confirmFirstArticleExemption",action(order,stage,assignment,machine,first,confirmation,confirmation,
                 "確認免首件檢測",confirmation,"FIRST_ARTICLE_EXEMPTION",confirmation ? null : "EXEMPTION_NOT_APPLICABLE"));
         return actions;

@@ -26,14 +26,15 @@ public class ThreadMachineHistoryLogDao {
 
     public int addThreadMachineHistoryLog(ThreadMachineHistoryLogRequest request) {
         String sql = """
-                INSERT INTO mydb.thread_machine_history_log (title, `time`, machine_id, log)
-                VALUES (:title, COALESCE(:time, CURRENT_TIMESTAMP), :machineId, :log)
+                INSERT INTO mydb.thread_machine_history_log (title, `time`, machine_id, log, state)
+                VALUES (:title, COALESCE(:time, CURRENT_TIMESTAMP), :machineId, :log, :state)
                 """;
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("title", request.title())
                 .addValue("time", request.time() == null ? null : new Timestamp(request.time().getTime()), Types.TIMESTAMP)
                 .addValue("machineId", request.machineId())
-                .addValue("log", request.log());
+                .addValue("log", request.log())
+                .addValue("state", request.state(), Types.INTEGER);
         return jdbcTemplate.update(sql, params);
     }
 
@@ -52,5 +53,42 @@ public class ThreadMachineHistoryLogDao {
                 SELECT * FROM mydb.thread_machine_history_log WHERE machine_id = :machineId
                 ORDER BY `time` DESC, id DESC
                 """, Map.of("machineId", machineId), new ThreadMachineHistoryLogRowMapper());
+    }
+
+    public int updateThreadMachineHistoryLog(int id, ThreadMachineHistoryLogRequest request) {
+        java.util.ArrayList<String> assignments = new java.util.ArrayList<>();
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("id", id);
+        if (request.title() != null) {
+            assignments.add("title = :title");
+            params.addValue("title", request.title());
+        }
+        if (request.time() != null) {
+            assignments.add("`time` = :time");
+            params.addValue("time", new Timestamp(request.time().getTime()), Types.TIMESTAMP);
+        }
+        if (request.machineId() != null) {
+            assignments.add("machine_id = :machineId");
+            params.addValue("machineId", request.machineId());
+        }
+        if (request.log() != null) {
+            assignments.add("log = :log");
+            params.addValue("log", request.log());
+        }
+        if (request.state() != null) {
+            assignments.add("state = :state");
+            params.addValue("state", request.state(), Types.INTEGER);
+        }
+        if (assignments.isEmpty()) return 0;
+        return jdbcTemplate.update("UPDATE mydb.thread_machine_history_log SET "
+                + String.join(", ", assignments) + " WHERE id = :id", params);
+    }
+
+    public int replaceThreadMachineHistoryLog(int id, ThreadMachineHistoryLogRequest request) {
+        return jdbcTemplate.update("UPDATE mydb.thread_machine_history_log SET title = :title, `time` = :time, "
+                + "machine_id = :machineId, log = :log, state = :state WHERE id = :id",
+                new MapSqlParameterSource().addValue("id", id)
+                        .addValue("title", request.title()).addValue("time", new Timestamp(request.time().getTime()), Types.TIMESTAMP)
+                        .addValue("machineId", request.machineId()).addValue("log", request.log())
+                        .addValue("state", request.state(), Types.INTEGER));
     }
 }

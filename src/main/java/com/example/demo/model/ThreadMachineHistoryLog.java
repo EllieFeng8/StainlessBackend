@@ -12,4 +12,5 @@ public class ThreadMachineHistoryLog {
     String title;
     Date time;
     String log;
+    Integer state;
 }

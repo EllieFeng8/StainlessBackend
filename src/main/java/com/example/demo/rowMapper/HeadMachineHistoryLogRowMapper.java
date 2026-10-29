@@ -17,6 +17,7 @@ public class HeadMachineHistoryLogRowMapper implements RowMapper<HeadMachineHist
         headMachineHistoryLog.setTime(time == null ? null : time.toLocalDateTime());
         headMachineHistoryLog.setMachineId(rs.getInt("machine_id"));
         headMachineHistoryLog.setLog(rs.getString("log"));
+        headMachineHistoryLog.setState(rs.getObject("state", Integer.class));
         return headMachineHistoryLog;
     }
 }

@@ -13,7 +13,7 @@ public class HeadMachineRowMapper implements RowMapper<HeadMachine> {
     public HeadMachine mapRow(ResultSet rs, int rowNum) throws SQLException {
         HeadMachine headMachine = new HeadMachine();
         headMachine.setId(rs.getInt("id"));
-        headMachine.setHeadMachineCode(rs.getInt("head_machine_code"));
+        headMachine.setHeadMachineCode(rs.getString("head_machine_code"));
         headMachine.setHeadMachineName(rs.getString("head_machine_name"));
         return headMachine;
     }

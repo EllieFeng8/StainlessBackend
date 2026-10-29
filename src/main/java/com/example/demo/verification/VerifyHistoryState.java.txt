@@ -1,0 +1,34 @@
+import java.sql.*;
+import java.nio.file.*;
+import java.util.*;
+import com.example.demo.dao.*;
+import com.example.demo.dto.*;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+class VerifyHistoryState {
+ public static void main(String[] args) throws Exception {
+  Properties p=new Properties();
+  try(var in=Files.newInputStream(Path.of(args[0]))) {p.load(in);}
+  try(var c=DriverManager.getConnection(p.getProperty("spring.datasource.url"),p.getProperty("spring.datasource.username"),p.getProperty("spring.datasource.password"))) {
+   // Connection-local tables shadow real names; persistent rows are never modified.
+   for(String table:List.of("head_machine_history_log","thread_machine_history_log")) {
+    String ddl;
+    try(var s=c.createStatement();var r=s.executeQuery("SHOW CREATE TABLE mydb."+table)) {r.next();ddl=r.getString(2);}
+    ddl=ddl.replace("CREATE TABLE `"+table+"`", "CREATE TEMPORARY TABLE mydb.`"+table+"`");
+    ddl=ddl.replaceAll("(?m)^  CONSTRAINT .*\n", "").replace(",\n)", "\n)");
+    try(var s=c.createStatement()) {s.execute(ddl);}
+   }
+   var jdbc=new NamedParameterJdbcTemplate(new SingleConnectionDataSource(c,true));
+   var head=new HeadMachineHistoryLogDao(jdbc);
+   var thread=new ThreadMachineHistoryLogDao(jdbc);
+   head.addHeadMachineHistoryLog(new HeadMachineHistoryLogRequest("test",null,1,"test",2));
+   thread.addThreadMachineHistoryLog(new ThreadMachineHistoryLogRequest("test",null,1,"test",2));
+   var h=head.getHeadMachineHistoryLogs().getFirst(); var t=thread.getThreadMachineHistoryLogs().getFirst();
+   if(!Integer.valueOf(2).equals(h.getState()) || !Integer.valueOf(2).equals(t.getState())) throw new AssertionError("POST state");
+   head.updateHeadMachineHistoryLog(h.getId(),new HeadMachineHistoryLogRequest(null,null,null,null,0));
+   thread.updateThreadMachineHistoryLog(t.getId(),new ThreadMachineHistoryLogRequest(null,null,null,null,3));
+   if(!Integer.valueOf(0).equals(head.getHeadMachineHistoryLog(h.getId()).orElseThrow().getState()) || !Integer.valueOf(3).equals(thread.getThreadMachineHistoryLog(t.getId()).orElseThrow().getState())) throw new AssertionError("PATCH state");
+   System.out.println("PASS: both actual MySQL table schemas, POST state=2 and PATCH state=0/3, GET readback verified. Persistent data untouched.");
+  }
+ }
+}

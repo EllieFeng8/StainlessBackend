@@ -1,0 +1,214 @@
+# WorkOrderHeadingMachineController：11 個端點，另附同端點的情境範例。
+# 依目前 Controller、Service、DAO 整理；請依需要逐筆執行。
+@baseUrl = http://localhost:8080/api
+@workOrderId = 1
+@headMachineId = 1
+@materialId = 1
+@memberId = 1
+@assignmentId = 1
+@employeeCode = EMP001
+@reviewer = 審核人員
+# 結單時間不可早於實際開工時間，執行前請更新。
+@endAt = 2026-10-28T18:00:00+08:00
+
+# ID 對照：
+# workOrderId 是工單資料庫 ID；新增/PATCH 的對應欄位叫 workOrderCode。
+# headMachineId 是機台 ID；新增/PATCH 的對應欄位叫 machineId。
+# URL 的 {id} 是派工 ID（assignmentId），不是工單 ID 或機台 ID。
+# 新增不回傳派工 ID；可透過查詢或 production/verify 取得後更新 assignmentId。
+# 成功寫入回應：{"success":true,"code":200,"message":"OK","data":null}
+# 新增 HTTP 狀態為 201，但 Body 的 code 仍為 200。
+# GET 直接回傳陣列/物件；例外的錯誤 Body 不保證是 ApiResponse。
+# 生產流程一般錯誤：400 參數錯誤、404 派工不存在、409 流程狀態不允許。
+# state 可省略；非 null 時必須是 JSON 整數 0..3。
+# 0=斷線、1=異常紅燈、2=自動運行綠燈、3=待機黃燈。
+# 寫入機台歷史時，生產中固定 state=2，其餘支援狀態固定 state=3；
+# close 固定 state=2。只有沒有上述狀態對應時才使用傳入的 state。
+# production 流程以 URL 派工 ID 決定對象，Body 的 workOrderId/machineId/materialId 不用於切換派工。
+
+### 1. 新增派工（201；重複鍵 409）
+# workOrderCode、machineId 必填；其他欄位是否可為 null 仍依資料庫限制。
+# 不可設定 productionStatus、startedAt、endAt、materialLoss、remainingMaterial；
+# orderClosed 只允許省略、null 或 0，生產與結單請使用 production API。
+# 其餘可選欄位（新增/PATCH 共用）：
+# Integer: materialId、memberId
+# String: updateMachine、changeReason、quantityChangeReason、reason、remark、employeeCode、reviewer、opinion
+# Float: targetQuantity、targetUpOffsetQuantity、targetDownOffsetQuantity、currentQuantity、previousQuantity、updateQuantity、oee
+# Boolean: approved
+POST {{baseUrl}}/workOrderHeadingMachine/addWorkOrderHeadingMachine
+Content-Type: application/json
+
+{
+  "workOrderCode": {{workOrderId}},
+  "machineId": {{headMachineId}},
+  "materialId": {{materialId}},
+  "memberId": {{memberId}},
+  "employeeCode": "{{employeeCode}}",
+  "targetQuantity": 1000,
+  "targetUpOffsetQuantity": 50,
+  "targetDownOffsetQuantity": 50,
+  "currentQuantity": 0,
+  "orderClosed": 0,
+  "remark": "預計安排生產"
+}
+
+### 2. 查詢全部派工（200，陣列；無資料為 []）
+# 無分頁，DAO 未指定排序。
+# 回傳欄位包含 id 與 WorkOrderHeadingMachineRequest 的所有欄位。
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine
+Accept: application/json
+
+### 2a. 條件查詢（同一端點）
+# workOrderId、headMachineId、materialId 皆可選，可任意組合，條件之間為 AND。
+# 有任何條件但查無資料：404，ApiResponse 訊息「工單、機台與物料對應關係不存在」。
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine?workOrderId={{workOrderId}}&headMachineId={{headMachineId}}&materialId={{materialId}}
+Accept: application/json
+
+### 3. 依派工 ID 查詢（200，單一物件；不存在 404 且無 Body）
+GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine/{{assignmentId}}
+Accept: application/json
+
+### 4. 部分更新派工（200）
+# 僅限 started_at 為 null 且 order_closed 為 null/0；否則 409。
+# id 必須為正整數，至少一個非 null 欄位；省略/null 不更新，不能清成 null。
+# 生產與結單欄位限制同新增；不存在 404。
+PATCH {{baseUrl}}/workOrderHeadingMachine/updateWorkOrderHeadingMachine/{{assignmentId}}
+Content-Type: application/json
+
+{
+  "targetQuantity": 1200,
+  "targetUpOffsetQuantity": 60,
+  "targetDownOffsetQuantity": 60,
+  "remark": "開工前調整派工目標"
+}
+
+### 5. 驗證工單、機台、物料對應（200）
+# 三個查詢參數皆必填正整數。
+# 成功：{"headProductionAssignmentId":1}
+# 無符合 404；符合多筆 409。取得 ID 後請更新 assignmentId。
+GET {{baseUrl}}/workOrderHeadingMachine/production/verify?workOrderId={{workOrderId}}&headMachineId={{headMachineId}}&materialId={{materialId}}
+Accept: application/json
+
+### 6. 開始生產（200；不需要 Body）
+# order_closed 必須為 null/0；設 production_status=生產中、started_at=目前時間。
+# 寫入機台歷史（state=2）。目前重複呼叫會重新設定開始時間。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/start
+Accept: application/json
+
+### 7. 變更生產狀態（200）
+# 必須已開工且 order_closed 為 null/0。
+# productionStatus 必填，可用：生產中、換料、換針、目標產量設定、目標產量修改、
+# 等待、待料、待單、待沖模、待維修、待調車、無法續做、模具/牙板異常、盤元異常換料續做。
+# 不接受「開始生產」，請用 start。
+# 除生產中與目標產量設定/修改外，reason 必須非空白；不修改 started_at。
+# 一般狀態不可傳 targetQuantity、targetUpOffsetQuantity、targetDownOffsetQuantity、quantityChangeReason。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/status
+Content-Type: application/json
+
+{
+  "productionStatus": "待維修",
+  "reason": "模具需調整",
+  "state": 3
+}
+
+### 7a. 設定或修改目標產量（同一端點）
+# targetQuantity 必填非負數；上下偏移量可選，提供時也須為非負數。
+# quantityChangeReason 必須非空白，可用 reason 作為替代。
+# previous_quantity 自動取原 target_quantity，無須前端傳入。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/status
+Content-Type: application/json
+
+{
+  "productionStatus": "目標產量修改",
+  "targetQuantity": 1500,
+  "targetUpOffsetQuantity": 50,
+  "targetDownOffsetQuantity": 30,
+  "quantityChangeReason": "客戶追加需求"
+}
+
+### 7b. 恢復生產中（同一端點；不重設開始時間）
+# reason 可省略；省略時資料庫 reason 會設為 null。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/status
+Content-Type: application/json
+
+{
+  "productionStatus": "生產中"
+}
+
+### 8. 儲存物料資訊（200）
+# materialLoss、remainingMaterial 皆必填非負數。
+# 目前此 action 沒有額外限制開工或結單狀態。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/material
+Content-Type: application/json
+
+{
+  "materialLoss": 2.5,
+  "remainingMaterial": 10
+}
+
+### 9. 正常結單（200）
+# 一般結單必須已開工，且未結單、正常結單，或異常結單審核退回。
+# orderClosed 必填：1=正常、2=異常。
+# endAt、materialLoss、remainingMaterial 必填；時間不可早於開工，物料數值須非負。
+# employeeCode 可選，提供時不可空白。
+# 正常結單直接 approved=true；清除 reviewer/opinion，不進入待審。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 1,
+  "endAt": "{{endAt}}",
+  "materialLoss": 2.5,
+  "remainingMaterial": 10,
+  "employeeCode": "{{employeeCode}}",
+  "remark": "完成生產"
+}
+
+### 9a. 異常結單（同一端點；與正常結單擇一使用）
+# 額外必填非空白 reason、remark；approved 設 null，進入待審並清除 reviewer/opinion。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 2,
+  "endAt": "{{endAt}}",
+  "materialLoss": 5,
+  "remainingMaterial": 20,
+  "employeeCode": "{{employeeCode}}",
+  "reason": "設備異常無法續做",
+  "remark": "已通知維修，剩餘物料待處理"
+}
+
+### 10. 審核結單（200）
+# 僅 order_closed=1/2 且 approved 為 null 的待審派工可執行。
+# approved（true 通過/false 退回）、reviewer、opinion 必填；字串不可空白。
+# opinion 可使用 remark 替代；審核意見獨立儲存，不覆蓋原結單 reason/remark。
+# orderClosed 可選，只能 1/2；省略時保留原結單類型。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/review
+Content-Type: application/json
+
+{
+  "approved": true,
+  "reviewer": "{{reviewer}}",
+  "opinion": "已確認異常原因與物料紀錄"
+}
+
+### 9b. 審核人員再次結單／改判（close 的另一情境）
+# 已開工且 order_closed=1/2，傳入非空白 reviewer 時走此分支。
+# orderClosed、approved、opinion 必填；opinion 可用 remark 替代。
+# endAt、materialLoss、remainingMaterial 可省略以沿用原值，若提供仍須符合上述檢查。
+POST {{baseUrl}}/workOrderHeadingMachine/{{assignmentId}}/production/close
+Content-Type: application/json
+
+{
+  "orderClosed": 1,
+  "approved": true,
+  "reviewer": "{{reviewer}}",
+  "opinion": "複核後改判正常結單"
+}
+
+### 11. 刪除派工（200）
+# 僅限尚未開工且 order_closed 為 null/0；已開工或結單 409；不存在 404。
+# 此請求會實際刪除派工，請確認 assignmentId。
+DELETE {{baseUrl}}/workOrderHeadingMachine/deleteWorkOrderHeadingMachine/{{assignmentId}}
+Accept: application/json

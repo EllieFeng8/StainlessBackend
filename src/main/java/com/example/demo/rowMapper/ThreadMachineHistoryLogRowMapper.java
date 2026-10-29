@@ -17,6 +17,7 @@ public class ThreadMachineHistoryLogRowMapper implements RowMapper<ThreadMachine
         threadMachineHistoryLog.setTime(time);
         threadMachineHistoryLog.setMachineId(rs.getInt("machine_id"));
         threadMachineHistoryLog.setLog(rs.getString("log"));
+        threadMachineHistoryLog.setState(rs.getObject("state", Integer.class));
         return threadMachineHistoryLog;
     }
 }

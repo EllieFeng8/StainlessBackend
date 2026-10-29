@@ -1,3 +1,5 @@
+# 更新日期：2026-10-28
+# 共 15 個 Controller、82 個路由、91 段請求範例。
 # 專案 API 完整請求集（依 Controller 原始碼整理）
 # 使用 IntelliJ HTTP Client 或 VS Code REST Client，逐段執行。
 # baseUrl 依 application-example.properties 使用 /api；實際主機、連接埠與 context-path 請自行調整。
@@ -8,163 +10,29 @@
 # LocalDate：YYYY-MM-DD；LocalDateTime 不帶時區；Date 範例使用 ISO 8601 +08:00。
 # PATCH 範例提供常用更新欄位；省略欄位通常保留原值，null 不代表清空。
 # 回應依端點為資料、陣列或 ApiResponse；失敗可為 400（輸入）、404（查無）、409（狀態衝突）。
-# 共 15 個 Controller、77 個路由、86 段請求範例；已靜態檢查路由與 JSON，未對資料庫實際執行。
 # 工單歷史 /work-order-history 的 workOrderId 為顯示編號篩選字串；CSV 匯出使用同樣篩選且不受分頁限制。
 # 僅整理專案自訂 Controller API，不包含框架自動提供的 Swagger/error 路由。
 
 @baseUrl = http://localhost:8080/api
 @workOrderId = 1
-@workOrderCode = 2026102201
+@workOrderCode = 7
 @headMachineId = 1
 @threadMachineId = 1
 @materialId = 1
 @materialCode = MAT001
 @employeeCode = 101
-@headingAssignmentId = 1
+@headingAssignmentId = 210
 @threadingAssignmentId = 1
 @firstTestId = 1
 @outsourceId = 1
 @historyId = 1
 @stage = head
 @assignmentId = 1
-@endAt = 2026-10-22T18:00:00+08:00
-
-### 01 首件檢測／新增
-# 來源：FirstTestFormController.java
-# JSON Body 型別：FirstTestFormRequest；以下為可調整的範例。
-# 機台查詢可改用 threadMachineId；按工單及機台查詢至少提供一種機台 ID。
-# work_order_code 必填；至少提供一種機台 ID。相同工單/機台可能更新既有紀錄（200），新建為 201。
-POST {{baseUrl}}/firstTest/addFirstTest
-Accept: application/json
-Content-Type: application/json
-
-{
-  "work_order_code": {{workOrderId}},
-  "head_machineId": {{headMachineId}},
-  "head_material_code": {{materialId}},
-  "heading_length": "0",
-  "head_dia": "0",
-  "head_angle_s1": "0",
-  "head_angle_s2": "0",
-  "punch_type_no": "0",
-  "punch_width": "0",
-  "punch_gauge_depth": "0",
-  "head_thickness_h1": "0",
-  "head_thickness_h2": "0",
-  "enlarged_shank_dia": "0",
-  "enlarged_length": "0",
-  "state": false,
-  "record_by": "101"
-}
-
-
-### 02 首件檢測／搓牙範例（同一路由）
-# 搓牙製程使用 thread_machineId；所有量測值為格式示例，須改成實測結果。
-POST {{baseUrl}}/firstTest/addFirstTest
-Accept: application/json
-Content-Type: application/json
-
-{
-  "thread_machineId": {{threadMachineId}},
-  "thread_type": "0",
-  "thread_pitch": "0",
-  "major_diameter_d1": "0",
-  "major_diameter_d2": "0",
-  "thread_angle": "0",
-  "thread_length": "0",
-  "oblique_tooth_length": "0",
-  "thread_tail_angle": "0",
-  "minor_diameter": "0",
-  "oblique_tooth_diameter": "0",
-  "overall_length": "0",
-  "state": false,
-  "record_by": "101",
-  "work_order_code": {{workOrderId}},
-  "thread_material_code": {{materialId}}
-}
-
-
-### 03 首件檢測／更新（單筆）
-# 來源：FirstTestFormController.java
-# JSON Body 型別：FirstTestFormRequest；以下為可調整的範例。
-# 機台查詢可改用 threadMachineId；按工單及機台查詢至少提供一種機台 ID。
-# 完成首件 state=true 時須填完對應製程檢驗欄位；0 僅為格式示例，請填實測值。工單/機台/物料關聯不由 PATCH 更新；機台欄位用於製程辨識。
-PATCH {{baseUrl}}/firstTest/updateFirstTest/{{firstTestId}}
-Accept: application/json
-Content-Type: application/json
-
-{
-  "head_machineId": {{headMachineId}},
-  "heading_length": "0",
-  "head_dia": "0",
-  "head_angle_s1": "0",
-  "head_angle_s2": "0",
-  "punch_type_no": "0",
-  "punch_width": "0",
-  "punch_gauge_depth": "0",
-  "head_thickness_h1": "0",
-  "head_thickness_h2": "0",
-  "enlarged_shank_dia": "0",
-  "enlarged_length": "0",
-  "state": true,
-  "record_by": "101"
-}
-
-
-### 04 首件檢測／搓牙範例（同一路由）
-# 搓牙製程使用 thread_machineId；所有量測值為格式示例，須改成實測結果。
-PATCH {{baseUrl}}/firstTest/updateFirstTest/{{firstTestId}}
-Accept: application/json
-Content-Type: application/json
-
-{
-  "thread_machineId": {{threadMachineId}},
-  "thread_type": "0",
-  "thread_pitch": "0",
-  "major_diameter_d1": "0",
-  "major_diameter_d2": "0",
-  "thread_angle": "0",
-  "thread_length": "0",
-  "oblique_tooth_length": "0",
-  "thread_tail_angle": "0",
-  "minor_diameter": "0",
-  "oblique_tooth_diameter": "0",
-  "overall_length": "0",
-  "state": true,
-  "record_by": "101"
-}
-
-
-### 05 首件檢測／查詢
-# 來源：FirstTestFormController.java
-# 機台查詢可改用 threadMachineId；按工單及機台查詢至少提供一種機台 ID。
-# 不需要 Body。
-GET {{baseUrl}}/firstTest/getFirstTest
-Accept: application/json
-
-
-### 06 首件檢測／查詢
-# 來源：FirstTestFormController.java
-# Query workOrderId：必填。
-# Query headMachineId：選填，可移除。
-# Query threadMachineId：選填，可移除。
-# 機台查詢可改用 threadMachineId；按工單及機台查詢至少提供一種機台 ID。
-# 不需要 Body。
-GET {{baseUrl}}/firstTest/getFirstTestByWorkOrderAndMachine?workOrderId={{workOrderId}}&headMachineId={{headMachineId}}
-Accept: application/json
-
-
-### 07 首件檢測／查詢
-# 來源：FirstTestFormController.java
-# Query headMachineId：選填，可移除。
-# Query threadMachineId：選填，可移除。
-# 機台查詢可改用 threadMachineId；按工單及機台查詢至少提供一種機台 ID。
-# 不需要 Body。
-GET {{baseUrl}}/firstTest/getFirstTestByMachine?headMachineId={{headMachineId}}
-Accept: application/json
+@endAt = 2026-10-28T18:00:00+08:00
 
 
 ### 08 打頭機台／新增
+# 功能：打頭機台／新增
 # 來源：HeadMachineController.java
 # JSON Body 型別：HeadMachineRequest；以下為可調整的範例。
 POST {{baseUrl}}/headMachine/addMachine
@@ -172,12 +40,13 @@ Accept: application/json
 Content-Type: application/json
 
 {
-  "headMachineCode": 101,
+  "headMachineCode": "101",
   "headMachineName": "打頭機 A"
 }
 
 
 ### 09 打頭機台／更新（單筆）
+# 功能：打頭機台／更新（單筆）
 # 來源：HeadMachineController.java
 # JSON Body 型別：HeadMachineRequest；以下為可調整的範例。
 PATCH {{baseUrl}}/headMachine/updateMachine/{{headMachineId}}
@@ -185,12 +54,13 @@ Accept: application/json
 Content-Type: application/json
 
 {
-  "headMachineCode": 101,
+  "headMachineCode": "101",
   "headMachineName": "打頭機 A"
 }
 
 
 ### 10 打頭機台／刪除（單筆）
+# 功能：打頭機台／刪除（單筆）
 # 來源：HeadMachineController.java
 # 此操作會刪除資料，執行前確認 ID。
 # 不需要 Body。
@@ -198,7 +68,8 @@ DELETE {{baseUrl}}/headMachine/deleteMachine/{{headMachineId}}
 Accept: application/json
 
 
-### 11 打頭機台／查詢
+### 11 打頭機台／查詢列表
+# 功能：打頭機台／查詢列表
 # 來源：HeadMachineController.java
 # 不需要 Body。
 GET {{baseUrl}}/headMachine/getMachines
@@ -206,6 +77,7 @@ Accept: application/json
 
 
 ### 12 打頭機台／查詢（單筆）
+# 功能：打頭機台／查詢（單筆）
 # 來源：HeadMachineController.java
 # 不需要 Body。
 GET {{baseUrl}}/headMachine/getMachine/{{headMachineId}}
@@ -213,43 +85,84 @@ Accept: application/json
 
 
 ### 13 打頭機台歷程／新增
+# 功能：打頭機台歷程／新增
 # 來源：HeadMachineHistoryLogController.java
 # JSON Body 型別：HeadMachineHistoryLogRequest；以下為可調整的範例。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
+# machineId 必填；state 省略時存 NULL。
 POST {{baseUrl}}/headMachineHistoryLog/addHeadMachineHistoryLog
 Accept: application/json
 Content-Type: application/json
 
 {
-  "title": "操作紀錄",
-  "time": "2026-10-22T08:00:00",
   "machineId": {{headMachineId}},
-  "log": "範例紀錄內容"
+  "time": "2026-10-28T08:00:00",
+  "title": "生產中",
+  "log": "開始生產",
+  "state": 2
 }
 
 
-### 14 打頭機台歷程／查詢
+### 14 打頭機台歷程／查詢列表
+# 功能：打頭機台歷程／查詢列表
 # 來源：HeadMachineHistoryLogController.java
 # 不需要 Body。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
 GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLog
 Accept: application/json
 
 
 ### 15 打頭機台歷程／查詢（單筆）
+# 功能：打頭機台歷程／查詢（單筆）
 # 來源：HeadMachineHistoryLogController.java
 # 不需要 Body。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
 GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLog/{{historyId}}
 Accept: application/json
 
 
-### 16 打頭機台歷程／查詢
+### 16 打頭機台歷程／依機台查詢
+# 功能：打頭機台歷程／依機台查詢
 # 來源：HeadMachineHistoryLogController.java
 # Query machineId：必填。
 # 不需要 Body。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
 GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLogByMachine?machineId={{headMachineId}}
 Accept: application/json
 
 
-### 17 工單歷程／新增
+### 17 打頭機台歷程／部分更新
+# 功能：打頭機台歷程／部分更新
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
+# title/time/machineId/log/state 可個別更新，至少一個非 null 欄位；省略/null 保留。
+PATCH {{baseUrl}}/headMachineHistoryLog/updateHeadMachineHistoryLog/{{historyId}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "state": 3
+}
+
+
+### 18 打頭機台歷程／完整替換
+# 功能：打頭機台歷程／完整替換
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
+# machineId/time/state 必填；未填 title/log 清空為 NULL。
+PUT {{baseUrl}}/headMachineHistoryLog/updateHeadMachineHistoryLog/{{historyId}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "machineId": {{headMachineId}},
+  "time": "2026-10-28T08:00:00",
+  "title": "生產中",
+  "log": "開始生產",
+  "state": 2
+}
+
+
+### 19 工單歷程／新增
+# 功能：工單歷程／新增
 # 來源：HistoryLogController.java
 # JSON Body 型別：HistoryLogRequest；以下為可調整的範例。
 POST {{baseUrl}}/historyLog/addHistoryLog
@@ -258,27 +171,30 @@ Content-Type: application/json
 
 {
   "title": "操作紀錄",
-  "time": "2026-10-22T08:00:00",
+  "time": "2026-10-28T08:00:00",
   "workOrderCode": {{workOrderId}},
   "log": "範例紀錄內容"
 }
 
 
-### 18 工單歷程／查詢
+### 20 工單歷程／查詢列表
+# 功能：工單歷程／查詢列表
 # 來源：HistoryLogController.java
 # 不需要 Body。
 GET {{baseUrl}}/historyLog/getHistoryLog
 Accept: application/json
 
 
-### 19 工單歷程／查詢（單筆）
+### 21 工單歷程／查詢（單筆）
+# 功能：工單歷程／查詢（單筆）
 # 來源：HistoryLogController.java
 # 不需要 Body。
 GET {{baseUrl}}/historyLog/getHistoryLog/{{historyId}}
 Accept: application/json
 
 
-### 20 工單歷程／查詢
+### 22 工單歷程／依工單查詢
+# 功能：工單歷程／依工單查詢
 # 來源：HistoryLogController.java
 # Query workOrderCode：必填。
 # 不需要 Body。
@@ -286,9 +202,13 @@ GET {{baseUrl}}/historyLog/getHistoryLogByWorkOrder?workOrderCode={{workOrderId}
 Accept: application/json
 
 
-### 21 物料紀錄／新增
+### 23 物料紀錄／新增
+# 功能：物料紀錄／新增
 # 來源：MaterialHistoryFormController.java
 # JSON Body 型別：MaterialHistoryFormRequest；以下為可調整的範例。
+# machineCode 機台編碼；dieNumber 沖模編號；moldNumber 模具編號。
+# targetValue 目標值；alertUpperLimit 警戒上限；alertLowerLimit 警戒下限。
+# 新增時只有 moldNumber 非空白才保存目標及上下限；省略時預設為 10000、目標 × 0.95、目標 × 0.90。
 POST {{baseUrl}}/materialHistory/addMaterialHistory
 Accept: application/json
 Content-Type: application/json
@@ -302,13 +222,23 @@ Content-Type: application/json
   "materialLoss": 0,
   "remainingMaterial": 100,
   "remark": "首次領料",
-  "recordBy": "101"
+  "recordBy": "101",
+  "machineCode": "H001",
+  "dieNumber": "D001",
+  "moldNumber": "M001",
+  "targetValue": 10000,
+  "alertUpperLimit": 9500,
+  "alertLowerLimit": 9000
 }
 
 
-### 22 物料紀錄／更新（單筆）
+### 24 物料紀錄／更新（單筆）
+# 功能：物料紀錄／更新（單筆）
 # 來源：MaterialHistoryFormController.java
 # JSON Body 型別：MaterialHistoryFormRequest；以下為可調整的範例。
+# machineCode 機台編碼；dieNumber 沖模編號；moldNumber 模具編號。
+# targetValue 目標值；alertUpperLimit 警戒上限；alertLowerLimit 警戒下限。
+# 新增時只有 moldNumber 非空白才保存目標及上下限；省略時預設為 10000、目標 × 0.95、目標 × 0.90。
 PATCH {{baseUrl}}/materialHistory/updateMaterialHistory/{{materialId}}
 Accept: application/json
 Content-Type: application/json
@@ -322,25 +252,34 @@ Content-Type: application/json
   "materialLoss": 0,
   "remainingMaterial": 100,
   "remark": "首次領料",
-  "recordBy": "101"
+  "recordBy": "101",
+  "machineCode": "H001",
+  "dieNumber": "D001",
+  "moldNumber": "M001",
+  "targetValue": 10000,
+  "alertUpperLimit": 9500,
+  "alertLowerLimit": 9000
 }
 
 
-### 23 物料紀錄／查詢
+### 25 物料紀錄／查詢列表
+# 功能：物料紀錄／查詢列表
 # 來源：MaterialHistoryFormController.java
 # 不需要 Body。
 GET {{baseUrl}}/materialHistory/getMaterialHistory
 Accept: application/json
 
 
-### 24 物料紀錄／查詢
+### 26 物料紀錄／查詢（依物料編碼）
+# 功能：物料紀錄／查詢（依物料編碼）
 # 來源：MaterialHistoryFormController.java
 # 不需要 Body。
 GET {{baseUrl}}/materialHistory/getMaterialHistory/{{materialCode}}
 Accept: application/json
 
 
-### 25 物料紀錄／查詢
+### 27 物料紀錄／依工單查詢
+# 功能：物料紀錄／依工單查詢
 # 來源：MaterialHistoryFormController.java
 # Query workOrderCode：必填。
 # 不需要 Body。
@@ -348,148 +287,25 @@ GET {{baseUrl}}/materialHistory/getMaterialHistoryByWorkOrder?workOrderCode={{wo
 Accept: application/json
 
 
-### 26 員工／查詢
-# 來源：MemberController.java
-# 路徑 id 必須是數字 employee_code；新增不必傳資料表 id。role 範例請依現有資料調整。
-# 不需要 Body。
-GET {{baseUrl}}/members/getMembers
-Accept: application/json
-
-
-### 27 員工／查詢（單筆）
-# 來源：MemberController.java
-# 路徑 id 必須是數字 employee_code；新增不必傳資料表 id。role 範例請依現有資料調整。
-# 不需要 Body。
-GET {{baseUrl}}/members/getMember/{{employeeCode}}
-Accept: application/json
-
-
-### 28 員工／更新（單筆）
-# 來源：MemberController.java
-# JSON Body 型別：MemberPatchRequest；以下為可調整的範例。
-# 路徑 id 必須是數字 employee_code；新增不必傳資料表 id。role 範例請依現有資料調整。
-PATCH {{baseUrl}}/members/updateMember/{{employeeCode}}
+### 28 物料紀錄／批次更新模具目標與警戒值
+# 功能：物料紀錄／批次更新模具目標與警戒值
+# workOrderCode 必填正整數（工單資料表 id）；machineCode 必填，最多 255 字元。
+# 三項數值至少提供一項；省略/null 保留原值。
+# 更新所有符合工單及機台且 moldNumber 非空白的紀錄；無符合資料回傳 404。
+PATCH {{baseUrl}}/materialHistory/updateMoldLimits
 Accept: application/json
 Content-Type: application/json
 
 {
-  "name": "更新姓名",
-  "role": "operator"
+  "workOrderCode": {{workOrderId}},
+  "machineCode": "H001",
+  "targetValue": 10000,
+  "alertUpperLimit": 9500,
+  "alertLowerLimit": 9000
 }
 
-
-### 29 員工／刪除（單筆）
-# 來源：MemberController.java
-# 此操作會刪除資料，執行前確認 ID。
-# 路徑 id 必須是數字 employee_code；新增不必傳資料表 id。role 範例請依現有資料調整。
-# 不需要 Body。
-DELETE {{baseUrl}}/members/deleteMember/{{employeeCode}}
-Accept: application/json
-
-
-### 30 員工／新增
-# 來源：MemberController.java
-# JSON Body 型別：Member；以下為可調整的範例。
-# 路徑 id 必須是數字 employee_code；新增不必傳資料表 id。role 範例請依現有資料調整。
-POST {{baseUrl}}/members/addMember
-Accept: application/json
-Content-Type: application/json
-
-{
-  "employeeCode": "101",
-  "name": "測試員工",
-  "role": "operator"
-}
-
-
-### 31 外包／新增
-# 來源：OutsourceFormController.java
-# JSON Body 型別：OutsourceFormRequest；以下為可調整的範例。
-# workOrderId 為工單資料表 id；state 範例請依實際業務值調整。
-POST {{baseUrl}}/outsource/addOutsource
-Accept: application/json
-Content-Type: application/json
-
-{
-  "outsourceCode": "OUT20261022001",
-  "workOrderId": {{workOrderId}},
-  "outsourceQuantity": 1000,
-  "outsourceUpOffsetQuantity": 50,
-  "outsourceDownOffsetQuantity": 50,
-  "outsourcePosition": "範例外包廠",
-  "startedAt": "2026-10-22T08:00:00+08:00",
-  "endAt": "2026-10-23T18:00:00+08:00",
-  "state": "進行中",
-  "currentQuantity": 0,
-  "changeReason": "首次委外"
-}
-
-
-### 32 外包／更新（單筆）
-# 來源：OutsourceFormController.java
-# JSON Body 型別：OutsourceFormRequest；以下為可調整的範例。
-# workOrderId 為工單資料表 id；state 範例請依實際業務值調整。
-PATCH {{baseUrl}}/outsource/updateOutsource/{{outsourceId}}
-Accept: application/json
-Content-Type: application/json
-
-{
-  "outsourceCode": "OUT20261022001",
-  "workOrderId": {{workOrderId}},
-  "outsourceQuantity": 1000,
-  "outsourceUpOffsetQuantity": 50,
-  "outsourceDownOffsetQuantity": 50,
-  "outsourcePosition": "範例外包廠",
-  "startedAt": "2026-10-22T08:00:00+08:00",
-  "endAt": "2026-10-23T18:00:00+08:00",
-  "state": "進行中",
-  "currentQuantity": 0,
-  "changeReason": "首次委外"
-}
-
-
-### 33 外包／刪除（單筆）
-# 來源：OutsourceFormController.java
-# 此操作會刪除資料，執行前確認 ID。
-# workOrderId 為工單資料表 id；state 範例請依實際業務值調整。
-# 不需要 Body。
-DELETE {{baseUrl}}/outsource/deleteOutsource/{{outsourceId}}
-Accept: application/json
-
-
-### 34 外包／查詢
-# 來源：OutsourceFormController.java
-# workOrderId 為工單資料表 id；state 範例請依實際業務值調整。
-# 不需要 Body。
-GET {{baseUrl}}/outsource/getOutsource
-Accept: application/json
-
-
-### 35 外包／查詢（單筆）
-# 來源：OutsourceFormController.java
-# workOrderId 為工單資料表 id；state 範例請依實際業務值調整。
-# 不需要 Body。
-GET {{baseUrl}}/outsource/getOutsource/{{outsourceId}}
-Accept: application/json
-
-
-### 36 外包／查詢
-# 來源：OutsourceFormController.java
-# Query workOrderId：必填。
-# workOrderId 為工單資料表 id；state 範例請依實際業務值調整。
-# 不需要 Body。
-GET {{baseUrl}}/outsource/getOutsourceByWorkOrder?workOrderId={{workOrderId}}
-Accept: application/json
-
-
-### 37 連線測試／查詢
-# 來源：TestController.java
-# 不需要 Body。
-GET {{baseUrl}}/test/getTest
-Accept: application/json
-
-
-### 38 搓牙機台／新增
+### 41 搓牙機台／新增
+# 功能：搓牙機台／新增
 # 來源：ThreadMachineController.java
 # JSON Body 型別：ThreadMachineRequest；以下為可調整的範例。
 POST {{baseUrl}}/threadMachine/addMachine
@@ -502,7 +318,8 @@ Content-Type: application/json
 }
 
 
-### 39 搓牙機台／更新（單筆）
+### 42 搓牙機台／更新（單筆）
+# 功能：搓牙機台／更新（單筆）
 # 來源：ThreadMachineController.java
 # JSON Body 型別：ThreadMachineRequest；以下為可調整的範例。
 PUT {{baseUrl}}/threadMachine/updateMachine/{{threadMachineId}}
@@ -515,7 +332,8 @@ Content-Type: application/json
 }
 
 
-### 40 搓牙機台／刪除（單筆）
+### 43 搓牙機台／刪除（單筆）
+# 功能：搓牙機台／刪除（單筆）
 # 來源：ThreadMachineController.java
 # 此操作會刪除資料，執行前確認 ID。
 # 不需要 Body。
@@ -523,67 +341,100 @@ DELETE {{baseUrl}}/threadMachine/deleteMachine/{{threadMachineId}}
 Accept: application/json
 
 
-### 41 搓牙機台／查詢
+### 44 搓牙機台／查詢列表
+# 功能：搓牙機台／查詢列表
 # 來源：ThreadMachineController.java
 # 不需要 Body。
 GET {{baseUrl}}/threadMachine/getMachines
 Accept: application/json
 
 
-### 42 搓牙機台／查詢（單筆）
+### 45 搓牙機台／查詢（單筆）
+# 功能：搓牙機台／查詢（單筆）
 # 來源：ThreadMachineController.java
 # 不需要 Body。
 GET {{baseUrl}}/threadMachine/getMachine/{{threadMachineId}}
 Accept: application/json
 
 
-### 43 搓牙機台歷程／新增
+### 46 搓牙機台歷程／新增
+# 功能：搓牙機台歷程／新增
 # 來源：ThreadMachineHistoryLogController.java
 # JSON Body 型別：ThreadMachineHistoryLogRequest；以下為可調整的範例。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
+# machineId 必填；state 省略時存 NULL。
 POST {{baseUrl}}/threadMachineHistoryLog/addThreadMachineHistoryLog
 Accept: application/json
 Content-Type: application/json
 
 {
-  "title": "操作紀錄",
-  "time": "2026-10-22T08:00:00+08:00",
   "machineId": {{threadMachineId}},
-  "log": "範例紀錄內容"
+  "time": "2026-10-28T08:00:00+08:00",
+  "title": "生產中",
+  "log": "開始生產",
+  "state": 2
 }
 
 
-### 44 搓牙機台歷程／查詢
+### 47 搓牙機台歷程／查詢列表
+# 功能：搓牙機台歷程／查詢列表
 # 來源：ThreadMachineHistoryLogController.java
 # 不需要 Body。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
 GET {{baseUrl}}/threadMachineHistoryLog/getThreadMachineHistoryLog
 Accept: application/json
 
 
-### 45 搓牙機台歷程／查詢（單筆）
+### 48 搓牙機台歷程／查詢（單筆）
+# 功能：搓牙機台歷程／查詢（單筆）
 # 來源：ThreadMachineHistoryLogController.java
 # 不需要 Body。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
 GET {{baseUrl}}/threadMachineHistoryLog/getThreadMachineHistoryLog/{{historyId}}
 Accept: application/json
 
 
-### 46 搓牙機台歷程／查詢
+### 49 搓牙機台歷程／依機台查詢
+# 功能：搓牙機台歷程／依機台查詢
 # 來源：ThreadMachineHistoryLogController.java
 # Query machineId：必填。
 # 不需要 Body。
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
 GET {{baseUrl}}/threadMachineHistoryLog/getThreadMachineHistoryLogByMachine?machineId={{threadMachineId}}
 Accept: application/json
 
 
-### 47 工單／刪除（單筆）
-# 來源：WorkOrderController.java
-# 此操作會刪除資料，執行前確認 ID。
-# workOrder 為顯示編號；furaceNo 是現有 DTO 拼字。PATCH 不更新 workOrder。
-# 不需要 Body。
-DELETE {{baseUrl}}/workOrder/deleteWorkOrder/{{workOrderId}}
+### 50 搓牙機台歷程／部分更新
+# 功能：搓牙機台歷程／部分更新
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
+# title/time/machineId/log/state 可個別更新，至少一個非 null 欄位；省略/null 保留。
+PATCH {{baseUrl}}/threadMachineHistoryLog/updateThreadMachineHistoryLog/{{historyId}}
 Accept: application/json
+Content-Type: application/json
+
+{
+  "state": 3
+}
 
 
-### 48 工單／新增
+### 51 搓牙機台歷程／完整替換
+# 功能：搓牙機台歷程／完整替換
+# state 為整數：0 斷線、1 異常紅燈、2 自動運行綠燈、3 待機黃燈；不接受字串、小數。
+# machineId/time/state 必填；未填 title/log 清空為 NULL。
+PUT {{baseUrl}}/threadMachineHistoryLog/updateThreadMachineHistoryLog/{{historyId}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "machineId": {{threadMachineId}},
+  "time": "2026-10-28T08:00:00+08:00",
+  "title": "生產中",
+  "log": "開始生產",
+  "state": 2
+}
+
+### 53 工單／新增
+# 功能：工單／新增
 # 來源：WorkOrderController.java
 # JSON Body 型別：WorkOrderRequest；以下為可調整的範例。
 # workOrder 為顯示編號；furaceNo 是現有 DTO 拼字。PATCH 不更新 workOrder。
@@ -592,10 +443,10 @@ Accept: application/json
 Content-Type: application/json
 
 {
-  "workOrder": 2026102201,
+  "workOrder": 2026102801,
   "deadlineDate": "2026-10-30",
-  "startAt": "2026-10-22T08:00:00",
-  "endAt": "2026-10-22T18:00:00",
+  "startAt": "2026-10-28T08:00:00",
+  "endAt": "2026-10-28T18:00:00",
   "model": "M6x20",
   "material": "SUS304",
   "productName": "螺絲",
@@ -619,7 +470,8 @@ Content-Type: application/json
 }
 
 
-### 49 工單／更新（單筆）
+### 54 工單／更新（單筆）
+# 功能：工單／更新（單筆）
 # 來源：WorkOrderController.java
 # JSON Body 型別：WorkOrderRequest；以下為可調整的範例。
 # workOrder 為顯示編號；furaceNo 是現有 DTO 拼字。PATCH 不更新 workOrder。
@@ -628,10 +480,9 @@ Accept: application/json
 Content-Type: application/json
 
 {
-  "workOrder": 2026102201,
   "deadlineDate": "2026-10-30",
-  "startAt": "2026-10-22T08:00:00",
-  "endAt": "2026-10-22T18:00:00",
+  "startAt": "2026-10-28T08:00:00",
+  "endAt": "2026-10-28T18:00:00",
   "model": "M6x20",
   "material": "SUS304",
   "productName": "螺絲",
@@ -655,7 +506,8 @@ Content-Type: application/json
 }
 
 
-### 50 工單／查詢
+### 55 工單／查詢列表
+# 功能：工單／查詢列表
 # 來源：WorkOrderController.java
 # workOrder 為顯示編號；furaceNo 是現有 DTO 拼字。PATCH 不更新 workOrder。
 # 不需要 Body。
@@ -663,7 +515,8 @@ GET {{baseUrl}}/workOrder/getWorkOrder
 Accept: application/json
 
 
-### 51 工單／查詢（單筆）
+### 56 工單／查詢（單筆）
+# 功能：工單／查詢（單筆）
 # 來源：WorkOrderController.java
 # workOrder 為顯示編號；furaceNo 是現有 DTO 拼字。PATCH 不更新 workOrder。
 # 不需要 Body。
@@ -671,7 +524,8 @@ GET {{baseUrl}}/workOrder/getWorkOrder/{{workOrderId}}
 Accept: application/json
 
 
-### 52 工單／查詢
+### 57 工單／依顯示工單編號查詢
+# 功能：工單／依顯示工單編號查詢
 # 來源：WorkOrderController.java
 # workOrder 為顯示編號；furaceNo 是現有 DTO 拼字。PATCH 不更新 workOrder。
 # 不需要 Body。
@@ -679,7 +533,8 @@ GET {{baseUrl}}/workOrder/getWorkOrderByCode/{{workOrderCode}}
 Accept: application/json
 
 
-### 53 工單明細與首件流程／查詢
+### 58 工單明細與首件流程／取得工單及製程整合明細
+# 功能：工單明細與首件流程／取得工單及製程整合明細
 # 來源：WorkOrderDetailController.java
 # 此處 workOrderCode 使用顯示編號字串，並非工單資料表 id。
 # 不需要 Body。
@@ -687,7 +542,8 @@ GET {{baseUrl}}/work-orders/{{workOrderCode}}/detail
 Accept: application/json
 
 
-### 54 工單明細與首件流程／prepare
+### 59 工單明細與首件流程／取得或建立首件
+# 功能：工單明細與首件流程／取得或建立首件
 # 來源：WorkOrderDetailController.java
 # 此處 workOrderCode 使用顯示編號字串，並非工單資料表 id。
 # 取得或建立首件；Body 可省略。
@@ -695,7 +551,8 @@ POST {{baseUrl}}/work-orders/{{workOrderCode}}/assignments/{{stage}}/{{assignmen
 Accept: application/json
 
 
-### 55 工單明細與首件流程／rerun
+### 60 工單明細與首件流程／重跑首件檢測
+# 功能：工單明細與首件流程／重跑首件檢測
 # 來源：WorkOrderDetailController.java
 # 此處 workOrderCode 使用顯示編號字串，並非工單資料表 id。
 # reason 必填。
@@ -708,7 +565,8 @@ Content-Type: application/json
 }
 
 
-### 56 工單明細與首件流程／exemption
+### 61 工單明細與首件流程／確認免首檢
+# 功能：工單明細與首件流程／確認免首檢
 # 來源：WorkOrderDetailController.java
 # 此處 workOrderCode 使用顯示編號字串，並非工單資料表 id。
 # reason 只能是 其他製程／委外／盤元異常補領；須符合後端免首檢條件。
@@ -721,7 +579,8 @@ Content-Type: application/json
 }
 
 
-### 57 工單明細與首件流程／additional-production
+### 62 工單明細與首件流程／結單後追加生產
+# 功能：工單明細與首件流程／結單後追加生產
 # 來源：WorkOrderDetailController.java
 # 此處 workOrderCode 使用顯示編號字串，並非工單資料表 id。
 # 已完成結單才能追加；targetQuantity 須大於原目標及已生產量並通過允收檢查。
@@ -735,7 +594,8 @@ Content-Type: application/json
 }
 
 
-### 58 打頭派工／驗證工單、機台與物料對應
+### 63 打頭派工／驗證工單、機台與物料對應
+# 功能：打頭派工／驗證工單、機台與物料對應
 # 來源：WorkOrderHeadingMachineController.java
 # Query workOrderId：必填。
 # Query headMachineId：必填。
@@ -746,32 +606,39 @@ GET {{baseUrl}}/workOrderHeadingMachine/production/verify?workOrderId={{workOrde
 Accept: application/json
 
 
-### 59 打頭派工／開工
+### 64 打頭派工／開工
+# 功能：打頭派工／開工
 # 來源：WorkOrderHeadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
-# 不需要 Body；須未結單且已完成首件或符合免首檢條件；開始時間由伺服器設定。
 # 不需要 Body。
+# 不需要 Body；須未結單；後端設定開始時間並新增 state=2 的機台歷程。
+# 目前允許未取得首件放行就開工，後端會記錄未放行情況。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/start
 Accept: application/json
 
 
-### 60 打頭派工／變更生產狀態
+### 65 打頭派工／變更生產狀態
+# 功能：打頭派工／變更生產狀態
 # 來源：WorkOrderHeadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 須已開工且未結單。生產中可省略 reason；其他非目標產量狀態需 reason。
 # 可用狀態：生產中、換料、換針、目標產量設定、目標產量修改、等待、待料、待單、待沖模、待維修、待調車、無法續做、模具/牙板異常、盤元異常換料續做。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/status
 Accept: application/json
 Content-Type: application/json
 
 {
   "productionStatus": "等待",
-  "reason": "等待品質確認"
+  "reason": "等待品質確認",
+  "state": 3
 }
 
 
-### 61 打頭派工／修改目標產量（同一路由另一種 Body）
+### 66 打頭派工／修改目標產量（同一路由另一種 Body）
+# 功能：打頭派工／修改目標產量（同一路由另一種 Body）
 # 僅已開工未結單；targetQuantity 必填且 >=0；quantityChangeReason 必填；上下偏差選填且 >=0。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/status
 Accept: application/json
 Content-Type: application/json
@@ -781,16 +648,19 @@ Content-Type: application/json
   "targetQuantity": 1200,
   "targetUpOffsetQuantity": 50,
   "targetDownOffsetQuantity": 50,
-  "quantityChangeReason": "客戶追加數量"
+  "quantityChangeReason": "客戶追加數量",
+  "state": 3
 }
 
 
-### 62 打頭派工／結單
+### 67 打頭派工／結單
+# 功能：打頭派工／結單
 # 來源：WorkOrderHeadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # orderClosed=1 正常（自動通過）、2 異常（待審）；異常必填 reason 與 remark。
 # endAt 必填且不可早於開工；materialLoss、remainingMaterial 必填且 >=0；執行前修改 endAt。
 # 須已開工；異常待審/通過不能一般重送，退回後可重新結單。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/close
 Accept: application/json
 Content-Type: application/json
@@ -801,12 +671,15 @@ Content-Type: application/json
   "materialLoss": 5,
   "remainingMaterial": 20,
   "reason": "設備異常提前停工",
-  "remark": "提交異常結單"
+  "remark": "提交異常結單",
+  "state": 2
 }
 
 
-### 63 打頭派工／審核人員再次結單（同一路由另一種 Body）
+### 68 打頭派工／審核人員再次結單（同一路由另一種 Body）
+# 功能：打頭派工／審核人員再次結單（同一路由另一種 Body）
 # 僅已開工且已結單；reviewer、approved、opinion 與 orderClosed 必填，其餘省略保留原值。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/close
 Accept: application/json
 Content-Type: application/json
@@ -815,28 +688,34 @@ Content-Type: application/json
   "orderClosed": 2,
   "approved": true,
   "reviewer": "102",
-  "opinion": "審核後判定異常並通過"
+  "opinion": "審核後判定異常並通過",
+  "state": 2
 }
 
 
-### 64 打頭派工／儲存物料用量
+### 69 打頭派工／儲存物料用量
+# 功能：打頭派工／儲存物料用量
 # 來源：WorkOrderHeadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 兩個欄位皆必填且 >=0。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/material
 Accept: application/json
 Content-Type: application/json
 
 {
   "materialLoss": 5,
-  "remainingMaterial": 20
+  "remainingMaterial": 20,
+  "state": 3
 }
 
 
-### 65 打頭派工／審核結單
+### 70 打頭派工／審核結單
+# 功能：打頭派工／審核結單
 # 來源：WorkOrderHeadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 限已結單且待審；approved、reviewer、opinion 必填。approved=false 為退回；可另帶 orderClosed=1/2 改判。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderHeadingMachine/{{headingAssignmentId}}/production/review
 Accept: application/json
 Content-Type: application/json
@@ -844,11 +723,13 @@ Content-Type: application/json
 {
   "approved": true,
   "reviewer": "102",
-  "opinion": "確認數量與物料資料無誤"
+  "opinion": "確認數量與物料資料無誤",
+  "state": 3
 }
 
 
-### 66 打頭派工／新增
+### 71 打頭派工／新增
+# 功能：打頭派工／新增
 # 來源：WorkOrderHeadingMachineController.java
 # JSON Body 型別：WorkOrderHeadingMachineRequest；以下為可調整的範例。
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
@@ -874,7 +755,8 @@ Content-Type: application/json
 }
 
 
-### 67 打頭派工／查詢
+### 72 打頭派工／查詢列表
+# 功能：打頭派工／查詢列表
 # 來源：WorkOrderHeadingMachineController.java
 # Query workOrderId：選填，可移除。
 # Query headMachineId：選填，可移除。
@@ -886,7 +768,8 @@ GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine?workOrderId={
 Accept: application/json
 
 
-### 68 打頭派工／查詢（單筆）
+### 73 打頭派工／查詢（單筆）
+# 功能：打頭派工／查詢（單筆）
 # 來源：WorkOrderHeadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 新增/一般 PATCH 不可填 productionStatus、startedAt、endAt、materialLoss、remainingMaterial 或非 0 的 orderClosed。已開工須改用 production API；已開工或結單不可刪除。
@@ -895,7 +778,8 @@ GET {{baseUrl}}/workOrderHeadingMachine/getWorkOrderHeadingMachine/{{headingAssi
 Accept: application/json
 
 
-### 69 打頭派工／更新（單筆）
+### 74 打頭派工／更新（單筆）
+# 功能：打頭派工／更新（單筆）
 # 來源：WorkOrderHeadingMachineController.java
 # JSON Body 型別：WorkOrderHeadingMachineRequest；以下為可調整的範例。
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
@@ -911,7 +795,8 @@ Content-Type: application/json
 }
 
 
-### 70 打頭派工／刪除（單筆）
+### 75 打頭派工／刪除（單筆）
+# 功能：打頭派工／刪除（單筆）
 # 來源：WorkOrderHeadingMachineController.java
 # 此操作會刪除資料，執行前確認 ID。
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
@@ -921,34 +806,9 @@ DELETE {{baseUrl}}/workOrderHeadingMachine/deleteWorkOrderHeadingMachine/{{headi
 Accept: application/json
 
 
-### 71 工單歷史查詢／分頁列表
-# 來源：WorkOrderHistoryController.java
-# 選填 Query：workOrderId、machineName、heatNumber、productCode、startDate、endDate、page、pageSize。
-# page 預設 1 且 >=1；pageSize 預設 10，範圍 1..200；日期 YYYY-MM-DD，startDate 不可晚於 endDate。
-# 篩選範例可加 &workOrderId=2026102201&startDate=2026-10-01&endDate=2026-10-31；含空白或中文請 URL 編碼。
-# 不需要 Body。
-GET {{baseUrl}}/work-order-history?page=1&pageSize=10
-Accept: application/json
 
-
-### 72 工單歷史查詢／篩選選項
-# 來源：WorkOrderHistoryController.java
-# 不需要 Body。
-GET {{baseUrl}}/work-order-history/options
-Accept: application/json
-
-
-### 73 工單歷史查詢／匯出 CSV
-# 來源：WorkOrderHistoryController.java
-# 選填 Query：workOrderId、machineName、heatNumber、productCode、startDate、endDate、page、pageSize。
-# page 預設 1 且 >=1；pageSize 預設 10，範圍 1..200；日期 YYYY-MM-DD，startDate 不可晚於 endDate。
-# 篩選範例可加 &workOrderId=2026102201&startDate=2026-10-01&endDate=2026-10-31；含空白或中文請 URL 編碼。
-# 不需要 Body。
-GET {{baseUrl}}/work-order-history/export?page=1&pageSize=10
-Accept: text/csv
-
-
-### 74 搓牙派工／驗證工單、機台與物料對應
+### 79 搓牙派工／驗證工單、機台與物料對應
+# 功能：搓牙派工／驗證工單、機台與物料對應
 # 來源：WorkOrderThreadingMachineController.java
 # Query workOrderId：必填。
 # Query threadMachineId：必填。
@@ -959,32 +819,39 @@ GET {{baseUrl}}/workOrderThreadingMachine/production/verify?workOrderId={{workOr
 Accept: application/json
 
 
-### 75 搓牙派工／開工
+### 80 搓牙派工／開工
+# 功能：搓牙派工／開工
 # 來源：WorkOrderThreadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
-# 不需要 Body；須未結單且已完成首件或符合免首檢條件；開始時間由伺服器設定。
 # 不需要 Body。
+# 不需要 Body；須未結單；後端設定開始時間並新增 state=2 的機台歷程。
+# 目前允許未取得首件放行就開工，後端會記錄未放行情況。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/start
 Accept: application/json
 
 
-### 76 搓牙派工／變更生產狀態
+### 81 搓牙派工／變更生產狀態
+# 功能：搓牙派工／變更生產狀態
 # 來源：WorkOrderThreadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 須已開工且未結單。生產中可省略 reason；其他非目標產量狀態需 reason。
 # 可用狀態：生產中、換料、換針、目標產量設定、目標產量修改、等待、待料、待單、待沖模、待維修、待調車、無法續做、模具/牙板異常、盤元異常換料續做。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/status
 Accept: application/json
 Content-Type: application/json
 
 {
   "productionStatus": "等待",
-  "reason": "等待品質確認"
+  "reason": "等待品質確認",
+  "state": 3
 }
 
 
-### 77 搓牙派工／修改目標產量（同一路由另一種 Body）
+### 82 搓牙派工／修改目標產量（同一路由另一種 Body）
+# 功能：搓牙派工／修改目標產量（同一路由另一種 Body）
 # 僅已開工未結單；targetQuantity 必填且 >=0；quantityChangeReason 必填；上下偏差選填且 >=0。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/status
 Accept: application/json
 Content-Type: application/json
@@ -994,16 +861,19 @@ Content-Type: application/json
   "targetQuantity": 1200,
   "targetUpOffsetQuantity": 50,
   "targetDownOffsetQuantity": 50,
-  "quantityChangeReason": "客戶追加數量"
+  "quantityChangeReason": "客戶追加數量",
+  "state": 3
 }
 
 
-### 78 搓牙派工／結單
+### 83 搓牙派工／結單
+# 功能：搓牙派工／結單
 # 來源：WorkOrderThreadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # orderClosed=1 正常（自動通過）、2 異常（待審）；異常必填 reason 與 remark。
 # endAt 必填且不可早於開工；materialLoss、remainingMaterial 必填且 >=0；執行前修改 endAt。
 # 須已開工；異常待審/通過不能一般重送，退回後可重新結單。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/close
 Accept: application/json
 Content-Type: application/json
@@ -1014,12 +884,15 @@ Content-Type: application/json
   "materialLoss": 5,
   "remainingMaterial": 20,
   "reason": "設備異常提前停工",
-  "remark": "提交異常結單"
+  "remark": "提交異常結單",
+  "state": 2
 }
 
 
-### 79 搓牙派工／審核人員再次結單（同一路由另一種 Body）
+### 84 搓牙派工／審核人員再次結單（同一路由另一種 Body）
+# 功能：搓牙派工／審核人員再次結單（同一路由另一種 Body）
 # 僅已開工且已結單；reviewer、approved、opinion 與 orderClosed 必填，其餘省略保留原值。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/close
 Accept: application/json
 Content-Type: application/json
@@ -1028,28 +901,34 @@ Content-Type: application/json
   "orderClosed": 2,
   "approved": true,
   "reviewer": "102",
-  "opinion": "審核後判定異常並通過"
+  "opinion": "審核後判定異常並通過",
+  "state": 2
 }
 
 
-### 80 搓牙派工／儲存物料用量
+### 85 搓牙派工／儲存物料用量
+# 功能：搓牙派工／儲存物料用量
 # 來源：WorkOrderThreadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 兩個欄位皆必填且 >=0。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/material
 Accept: application/json
 Content-Type: application/json
 
 {
   "materialLoss": 5,
-  "remainingMaterial": 20
+  "remainingMaterial": 20,
+  "state": 3
 }
 
 
-### 81 搓牙派工／審核結單
+### 86 搓牙派工／審核結單
+# 功能：搓牙派工／審核結單
 # 來源：WorkOrderThreadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 限已結單且待審；approved、reviewer、opinion 必填。approved=false 為退回；可另帶 orderClosed=1/2 改判。
+# state 選填整數 0..3；結單歷程固定 2。其他操作依有效狀態映射：生產中=2，其他支援狀態=3；無對應才採用傳入值。
 POST {{baseUrl}}/workOrderThreadingMachine/{{threadingAssignmentId}}/production/review
 Accept: application/json
 Content-Type: application/json
@@ -1057,11 +936,13 @@ Content-Type: application/json
 {
   "approved": true,
   "reviewer": "102",
-  "opinion": "確認數量與物料資料無誤"
+  "opinion": "確認數量與物料資料無誤",
+  "state": 3
 }
 
 
-### 82 搓牙派工／新增
+### 87 搓牙派工／新增
+# 功能：搓牙派工／新增
 # 來源：WorkOrderThreadingMachineController.java
 # JSON Body 型別：WorkOrderThreadingMachineRequest；以下為可調整的範例。
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
@@ -1087,7 +968,8 @@ Content-Type: application/json
 }
 
 
-### 83 搓牙派工／查詢
+### 88 搓牙派工／查詢列表
+# 功能：搓牙派工／查詢列表
 # 來源：WorkOrderThreadingMachineController.java
 # Query workOrderId：選填，可移除。
 # Query threadMachineId：選填，可移除。
@@ -1099,7 +981,8 @@ GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine?workOrder
 Accept: application/json
 
 
-### 84 搓牙派工／查詢（單筆）
+### 89 搓牙派工／查詢（單筆）
+# 功能：搓牙派工／查詢（單筆）
 # 來源：WorkOrderThreadingMachineController.java
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
 # 新增/一般 PATCH 不可填 productionStatus、startedAt、endAt、materialLoss、remainingMaterial 或非 0 的 orderClosed。已開工須改用 production API；已開工或結單不可刪除。
@@ -1108,7 +991,8 @@ GET {{baseUrl}}/workOrderThreadingMachine/getWorkOrderThreadingMachine/{{threadi
 Accept: application/json
 
 
-### 85 搓牙派工／更新（單筆）
+### 90 搓牙派工／更新（單筆）
+# 功能：搓牙派工／更新（單筆）
 # 來源：WorkOrderThreadingMachineController.java
 # JSON Body 型別：WorkOrderThreadingMachineRequest；以下為可調整的範例。
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。
@@ -1124,7 +1008,8 @@ Content-Type: application/json
 }
 
 
-### 86 搓牙派工／刪除（單筆）
+### 91 搓牙派工／刪除（單筆）
+# 功能：搓牙派工／刪除（單筆）
 # 來源：WorkOrderThreadingMachineController.java
 # 此操作會刪除資料，執行前確認 ID。
 # workOrderCode/workOrderId 為工單資料表 id；路徑 id 為派工 id。

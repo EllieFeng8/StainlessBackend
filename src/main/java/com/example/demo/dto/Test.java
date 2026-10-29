@@ -8,4 +8,5 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Setter
 public class Test {
     String Message;
+    private String version;
 }

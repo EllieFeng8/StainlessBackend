@@ -7,7 +7,7 @@
 # 1. 確認新增欄位及舊狀態轉換 SQL 已套用。
 # 2. 使用測試資料；各情境 ID 須為不同的、尚未開工且 orderClosed=0 的派工。
 # 3. 可使用下方新增派工及查詢取得 ID；workOrderCode 是工單資料表 id。
-# 4. endAt 是範例時間，每次結單前改成實際結束時間，必須 >= 該派工 startedAt。
+# 4. end_at 由後端於首次結單自動記錄；重送及審核改判保留原結束時間，前端 endAt 不採用。
 # 5. 逐步執行所需情境，不要直接 Run All；重跑需換新的派工 ID。
 #
 # orderClosed：0 未結單 / 1 正常 / 2 異常。
@@ -19,6 +19,13 @@
 # 審核不覆寫原結單 reason、remark；審核資料存入 reviewer、approved、opinion。
 # 已審核不可重複審核；退回後需先 close 重新送審。
 # close 會清除 reviewer/opinion；approved 依正常 true、異常 null 設定，歷史紀錄保留原值。
+# close 同一交易自動寫入 end_at 與 oee，正常與異常結單皆適用，前端不必傳入這兩個值。
+# oee = state=2 的累計毫秒 / (end_at - started_at) 毫秒 × 100，四捨五入到小數兩位，範圍 0～100。
+# 依 machine_id 讀取對應 head/thread_machine_history_log，按 time、id 排序，每個狀態持續至下一筆。
+# 計入開工前最近一筆狀態，所有區段裁切到開工至結單；最後一筆只算到 end_at。
+# 無紀錄、NULL、斷線、紅燈及黃燈不累加運轉時間；總時間為零時 oee=0。
+# 已結單重送或改判保留原 end_at 與已有 oee，避免納入後續工單的運轉時間。
+# 已開工不可再次 production/start；恢復生產使用 production/status，productionStatus=生產中。
 
 @baseUrl = http://localhost:8080/api
 @resource = workOrderHeadingMachine
@@ -79,13 +86,12 @@ Content-Type: application/json
 }
 
 ### A 正常結單直接完成：提交結單
-# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+# 結束時間自動記錄；異常結單的 reason 與 remark 均必填。
 POST {{baseUrl}}/{{resource}}/{{normalId}}/production/close
 Content-Type: application/json
 
 {
   "orderClosed": 1,
-  "endAt": "{{endAt}}",
   "materialLoss": 5,
   "remainingMaterial": 20,
   "remark": "本次結單備註"
@@ -101,13 +107,12 @@ POST {{baseUrl}}/{{resource}}/{{abnormalId}}/production/start
 
 
 ### B 異常結單 → 維持異常並通過：提交結單
-# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+# 結束時間自動記錄；異常結單的 reason 與 remark 均必填。
 POST {{baseUrl}}/{{resource}}/{{abnormalId}}/production/close
 Content-Type: application/json
 
 {
   "orderClosed": 2,
-  "endAt": "{{endAt}}",
   "materialLoss": 5,
   "remainingMaterial": 20,
   "reason": "產量未達標，提前結束生產",
@@ -140,13 +145,12 @@ POST {{baseUrl}}/{{resource}}/{{abnormalToNormalId}}/production/start
 
 
 ### C 異常結單 → 審核改判正常：提交結單
-# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+# 結束時間自動記錄；異常結單的 reason 與 remark 均必填。
 POST {{baseUrl}}/{{resource}}/{{abnormalToNormalId}}/production/close
 Content-Type: application/json
 
 {
   "orderClosed": 2,
-  "endAt": "{{endAt}}",
   "materialLoss": 5,
   "remainingMaterial": 20,
   "reason": "產量未達標，提前結束生產",
@@ -179,13 +183,12 @@ POST {{baseUrl}}/{{resource}}/{{normalToAbnormalId}}/production/start
 
 
 ### D 正常結單 → 直接改成異常：提交結單
-# 執行前更新 endAt；異常結單的 reason 與 remark 均必填。
+# 結束時間自動記錄；異常結單的 reason 與 remark 均必填。
 POST {{baseUrl}}/{{resource}}/{{normalToAbnormalId}}/production/close
 Content-Type: application/json
 
 {
   "orderClosed": 1,
-  "endAt": "{{endAt}}",
   "materialLoss": 5,
   "remainingMaterial": 20,
   "remark": "本次結單備註"
@@ -202,7 +205,6 @@ Content-Type: application/json
 
 {
   "orderClosed": 2,
-  "endAt": "{{endAt}}",
   "employee_code": "102",
   "materialLoss": 5,
   "remainingMaterial": 20,
@@ -225,7 +227,6 @@ Content-Type: application/json
 
 {
   "orderClosed": 2,
-  "endAt": "{{endAt}}",
   "materialLoss": 5,
   "remainingMaterial": 20,
   "reason": "設備異常停止生產",
@@ -254,7 +255,6 @@ Content-Type: application/json
 
 {
   "orderClosed": 2,
-  "endAt": "{{endAt}}",
   "materialLoss": 8,
   "remainingMaterial": 17,
   "reason": "設備異常停止生產",

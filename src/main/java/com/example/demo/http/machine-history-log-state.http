@@ -1,0 +1,65 @@
+### state: 0=斷線, 1=異常紅燈, 2=自動運行綠燈, 3=待機黃燈
+@baseUrl = http://localhost:8080
+
+### Apply sql/machine_history_log_state.sql first if state columns are absent.
+### POST: state is optional (integer 0..3); omission stores NULL.
+### Send "state": 2, never "state": "" or "state": "2" (400).
+### PATCH: omit state to leave it unchanged; send "state": 0 to record disconnected.
+POST {{baseUrl}}/headMachineHistoryLog/addHeadMachineHistoryLog
+Content-Type: application/json
+
+{"machineId": 1, "title": "Status", "log": "Started", "state": 2}
+
+### GET list includes state; existing GET-by-id and GET-by-machine also include it.
+GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLog
+
+### PATCH: omitted/null fields remain unchanged; empty request returns 400, missing id returns 404.
+PATCH {{baseUrl}}/headMachineHistoryLog/updateHeadMachineHistoryLog/1
+Content-Type: application/json
+
+{"state": 3}
+
+### Production flow: status/close/material/review accept optional integer state.
+### productionStatus 生產中 overrides state to 2; all other supported production statuses override it to 3.
+### start also creates history with state=2. Unmapped statuses use the supplied state (or NULL).
+### The URL id is an assignment id. start does not create a machine history row.
+POST {{baseUrl}}/workOrderHeadingMachine/1/production/status
+Content-Type: application/json
+
+{"productionStatus": "待維修", "reason": "模具損壞", "state": 3}
+
+### Threading production flow uses the same state behavior.
+POST {{baseUrl}}/workOrderThreadingMachine/1/production/status
+Content-Type: application/json
+
+{"productionStatus": "待維修", "reason": "牙板損壞", "state": 3}
+
+### POST thread machine history
+POST {{baseUrl}}/threadMachineHistoryLog/addThreadMachineHistoryLog
+Content-Type: application/json
+
+{"machineId": 1, "title": "Status", "log": "Started", "state": 2}
+
+### GET thread machine history
+GET {{baseUrl}}/threadMachineHistoryLog/getThreadMachineHistoryLog
+
+### PATCH supports title, time, machineId, log, state independently.
+PATCH {{baseUrl}}/threadMachineHistoryLog/updateThreadMachineHistoryLog/1
+Content-Type: application/json
+
+{"state": 3}
+
+### PUT replaces the row; machineId, time and state required; omitted title/log become NULL.
+PUT {{baseUrl}}/headMachineHistoryLog/updateHeadMachineHistoryLog/1
+Content-Type: application/json
+
+{"machineId": 1, "time": "2026-10-28T08:00:00", "title": "生產中", "log": "Started", "state": 2}
+
+### PUT replaces the row; machineId, time and state required; omitted title/log become NULL.
+PUT {{baseUrl}}/threadMachineHistoryLog/updateThreadMachineHistoryLog/1
+Content-Type: application/json
+
+{"machineId": 1, "time": "2026-10-28T08:00:00", "title": "生產中", "log": "Started", "state": 2}
+
+### production/close: orderClosed=1 writes log=正常結單; orderClosed=2 writes log=異常結單.
+### Both close cases write state=2, including reviewer re-close; title retains production status.

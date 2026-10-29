@@ -7,6 +7,6 @@ import lombok.Setter;
 @Setter
 public class HeadMachineDto {
     int id;
-    int headMachineCode;
+    String headMachineCode;
     String headMachineName;
 }

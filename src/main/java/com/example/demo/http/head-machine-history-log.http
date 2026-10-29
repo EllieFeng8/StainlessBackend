@@ -1,0 +1,62 @@
+# HeadMachineHistoryLogController：全部 6 個 API
+# application.properties 設定 context-path=/api。
+@baseUrl = http://localhost:8080/api
+@machineId = 1
+@historyLogId = 1
+
+# 請先將 machineId 改成有效機台 ID。
+# 新增不回傳 ID；新增後可查詢列表，再修改 historyLogId 進行單筆查詢或更新。
+# state：0=斷線、1=異常紅燈、2=自動運行綠燈、3=待機黃燈。
+# state 必須使用 JSON 整數，不接受字串或小數。
+
+### 1. 新增紀錄（HTTP 201；Body 的 code 為 200）
+# machineId 必填；time 省略或為 null 時使用資料庫目前時間。
+# title、log、state 可省略。
+POST {{baseUrl}}/headMachineHistoryLog/addHeadMachineHistoryLog
+Content-Type: application/json
+
+{
+  "title": "機台啟動",
+  "time": "2026-10-28T14:30:00",
+  "machineId": {{machineId}},
+  "log": "機台開始自動運行",
+  "state": 2
+}
+
+### 2. 查詢全部紀錄（HTTP 200，回傳陣列）
+# 依 time DESC、id DESC 排序；無分頁；無資料回傳 []。
+GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLog
+Accept: application/json
+
+### 3. 依歷史紀錄 ID 查詢單筆（HTTP 200；不存在為 404）
+GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLog/{{historyLogId}}
+Accept: application/json
+
+### 4. 依機台 ID 查詢（HTTP 200，回傳陣列）
+# machineId 為必填整數；依 time DESC、id DESC 排序。
+GET {{baseUrl}}/headMachineHistoryLog/getHeadMachineHistoryLogByMachine?machineId={{machineId}}
+Accept: application/json
+
+### 5. 部分更新（HTTP 200；不存在為 404）
+# 可更新 title、time、machineId、log、state，至少提供一個非 null 欄位。
+# 省略或 null 的欄位維持原值，無法用 PATCH 清成 null。
+PATCH {{baseUrl}}/headMachineHistoryLog/updateHeadMachineHistoryLog/{{historyLogId}}
+Content-Type: application/json
+
+{
+  "log": "機台發生異常，等待處理",
+  "state": 1
+}
+
+### 6. 完整覆寫（HTTP 200；不存在為 404，不會新增）
+# machineId、time、state 必填；省略 title 或 log 會覆寫為 null。
+PUT {{baseUrl}}/headMachineHistoryLog/updateHeadMachineHistoryLog/{{historyLogId}}
+Content-Type: application/json
+
+{
+  "title": "機台待機",
+  "time": "2026-10-28T15:00:00",
+  "machineId": {{machineId}},
+  "log": "等待下一張工單",
+  "state": 3
+}

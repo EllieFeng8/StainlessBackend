@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.math.BigDecimal;
 
 @Component
 public class MaterialHistoryFormDao {
@@ -24,13 +25,26 @@ public class MaterialHistoryFormDao {
     }
 
     public int addMaterialHistoryForm(MaterialHistoryFormRequest request) {
+        BigDecimal targetValue = null;
+        BigDecimal alertUpperLimit = null;
+        BigDecimal alertLowerLimit = null;
+        if (request.moldNumber() != null && !request.moldNumber().isBlank()) {
+            targetValue = request.targetValue() != null
+                    ? request.targetValue() : new BigDecimal("10000");
+            alertUpperLimit = request.alertUpperLimit() != null
+                    ? request.alertUpperLimit() : targetValue.multiply(new BigDecimal("0.95"));
+            alertLowerLimit = request.alertLowerLimit() != null
+                    ? request.alertLowerLimit() : targetValue.multiply(new BigDecimal("0.90"));
+        }
         String sql = """
                 INSERT INTO mydb.material_history_form
                     (work_oder_code, material_code, material_name, unit, created_at, updated_at,
-                     quantity, material_loss, remaining_material, remark, record_by)
+                     quantity, material_loss, remaining_material, remark, record_by,
+                     target_value, alert_upper_limit, alert_lower_limit, machine_code, die_number, mold_number)
                 VALUES
                     (:workOrderCode, :materialCode, :materialName, :unit, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(),
-                     :quantity, :materialLoss, :remainingMaterial, :remark, :recordBy)
+                     :quantity, :materialLoss, :remainingMaterial, :remark, :recordBy,
+                     :targetValue, :alertUpperLimit, :alertLowerLimit, :machineCode, :dieNumber, :moldNumber)
                 """;
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("workOrderCode", request.workOrderCode())
@@ -41,7 +55,13 @@ public class MaterialHistoryFormDao {
                 .addValue("materialLoss", request.materialLoss())
                 .addValue("remainingMaterial", request.remainingMaterial())
                 .addValue("remark", request.remark())
-                .addValue("recordBy", request.recordBy());
+                .addValue("recordBy", request.recordBy())
+                .addValue("targetValue", targetValue)
+                .addValue("alertUpperLimit", alertUpperLimit)
+                .addValue("alertLowerLimit", alertLowerLimit)
+                .addValue("machineCode", request.machineCode())
+                .addValue("dieNumber", request.dieNumber())
+                .addValue("moldNumber", request.moldNumber());
         return jdbcTemplate.update(sql, params);
     }
 
@@ -54,6 +74,26 @@ public class MaterialHistoryFormDao {
         return jdbcTemplate.update(
                 "UPDATE mydb.material_history_form SET " + assignments
                         + ", updated_at = CURRENT_TIMESTAMP() WHERE material_id = :id", params);
+    }
+
+    private static final String MOLD_FILTER = " WHERE work_oder_code = :workOrderCode"
+            + " AND machine_code = :machineCode AND mold_number IS NOT NULL AND TRIM(mold_number) <> ''";
+
+    public int updateMoldLimits(int workOrderCode, String machineCode, Map<String, Object> fields) {
+        String assignments = fields.keySet().stream()
+                .map(column -> column + " = :" + column)
+                .collect(java.util.stream.Collectors.joining(", "));
+        Map<String, Object> params = new HashMap<>(fields);
+        params.put("workOrderCode", workOrderCode);
+        params.put("machineCode", machineCode);
+        return jdbcTemplate.update("UPDATE mydb.material_history_form SET " + assignments
+                + ", updated_at = CURRENT_TIMESTAMP()" + MOLD_FILTER, params);
+    }
+
+    public boolean existsMoldByWorkOrderAndMachine(int workOrderCode, String machineCode) {
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM mydb.material_history_form" + MOLD_FILTER,
+                Map.of("workOrderCode", workOrderCode, "machineCode", machineCode), Integer.class);
+        return count != null && count > 0;
     }
 
     public boolean existsById(int id) {

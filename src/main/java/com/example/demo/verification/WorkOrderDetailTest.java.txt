@@ -85,7 +85,7 @@ class WorkOrderDetailTest {
         assertTrue(head.actions().get("openFirstArticle").enabled()); assertTrue(head.actions().get("openFieldStatus").enabled());
         assertFalse(head.actions().get("openFieldStatus").confirmationRequired());
         var thread=result.processGroups().get(2).rows().getFirst();
-        assertTrue(thread.actions().get("openFieldStatus").confirmationRequired());
+        assertFalse(thread.actions().get("openFieldStatus").confirmationRequired());
         assertEquals("正式生產",thread.actions().get("openFieldStatus").label());
         assertEquals("有委外",result.processGroups().get(1).rows().getFirst().rawStatus());
     }
@@ -193,15 +193,36 @@ class WorkOrderDetailTest {
         when(dao.firstArticles(1)).thenReturn(List.of(complete("head"),complete("head")));
         assertThrows(ResponseStatusException.class,()->commands.command(new WorkOrderDetailRequest("000123"),"head",2,"prepare",null));
     }
-    @Test void productionStartChecksServerClearanceBeforeWrite() {
+    @Test void missingIncompleteAndAmbiguousFirstArticlesOnlyProduceAudit() {
+        for (String stage:List.of("head","thread")) {
+            for (var records:List.of(List.<Map<String,Object>>of(),List.of(row("id",5,stage+"_machineId",7)),List.of(complete(stage),complete(stage)))) {
+                var jdbc=mock(NamedParameterJdbcTemplate.class);
+                var commands=new WorkOrderFirstArticleStateService(jdbc,dao);
+                when(dao.firstArticles(1)).thenReturn(records);
+                assertDoesNotThrow(()->commands.recordProductionWithoutClearance(stage,row("id",2,"work_order_code",1,"machineId",7)));
+                verify(jdbc).update(contains("INSERT INTO mydb.history_log"),anyMap());
+            }
+        }
+    }
+    @Test void clearedProductionDoesNotProduceBypassAudit() {
         var jdbc=mock(NamedParameterJdbcTemplate.class);
-        var state=mock(WorkOrderFirstArticleStateService.class);
+        when(dao.states(1)).thenReturn(List.of(row("stage","head","machine_id",7,"requires_first_article",false,"exemption_confirmed_at",LocalDateTime.now())));
+        new WorkOrderFirstArticleStateService(jdbc,dao).recordProductionWithoutClearance("head",row("id",2,"work_order_code",1,"machineId",7));
+        verify(jdbc,never()).update(anyString(),anyMap());
+    }
+    @Test void productionStartWithoutClearanceWritesAuditAndStarts() {
+        var jdbc=mock(NamedParameterJdbcTemplate.class);
+        var state=new WorkOrderFirstArticleStateService(jdbc,dao);
         var production=new ProductionFlowService(jdbc);
         ReflectionTestUtils.setField(production,"firstArticleState",state);
         var assignment=row("id",2,"work_order_code",1,"machineId",7,"order_closed",0);
         when(jdbc.queryForList(anyString(),anyMap())).thenReturn(List.of(assignment));
-        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT)).when(state).validateProductionClearance("head",assignment);
-        assertThrows(ResponseStatusException.class,()->production.startProduction(ProductionFlowService.Process.HEADING,2));
-        verify(jdbc,never()).update(anyString(),anyMap());
+        when(dao.states(1)).thenReturn(List.of(row("stage","head","machine_id",7,"requires_first_article",true)));
+        assertDoesNotThrow(()->production.startProduction(ProductionFlowService.Process.HEADING,2));
+        verify(jdbc).update(contains("INSERT INTO mydb.history_log"),argThat((Map<String,?> p)->p.get("log").toString().contains("未依首件流程")));
+        verify(jdbc).update(contains("SET production_status=:status"),anyMap());
+        verify(jdbc).update(contains("INSERT INTO mydb.head_machine_history_log"),
+                argThat((Map<String,?> p) -> Integer.valueOf(2).equals(p.get("state"))));
+        verify(jdbc,never()).update(contains("UPDATE mydb.work_order_first_article_state"),anyMap());
     }
 }

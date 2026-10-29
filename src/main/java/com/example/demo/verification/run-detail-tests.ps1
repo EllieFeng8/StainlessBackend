@@ -6,6 +6,8 @@ $testDirectory = Join-Path $taskRoot '.verification/tests'
 New-Item -ItemType Directory -Force -Path $testDirectory | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'WorkOrderDetailTest.java.txt') -Destination (Join-Path $testDirectory 'WorkOrderDetailTest.java')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'WorkOrderDetailMysqlTest.java.txt') -Destination (Join-Path $testDirectory 'WorkOrderDetailMysqlTest.java')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'MaterialHistoryFormTest.java.txt') -Destination (Join-Path $testDirectory 'MaterialHistoryFormTest.java')
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'MachineHistoryLogStateTest.java.txt') -Destination (Join-Path $testDirectory 'MachineHistoryLogStateTest.java')
 # Keep generated outputs inside the permitted source workspace; do not change the project POM.
 $pom = [xml](Get-Content (Join-Path $projectRoot 'pom.xml') -Raw)
 $namespace = $pom.DocumentElement.NamespaceURI
@@ -34,7 +36,9 @@ try {
     & (Join-Path $projectRoot 'mvnw.cmd') @testArguments
     if ($LASTEXITCODE -ne 0) { throw "Tests failed: $LASTEXITCODE" }
 } finally {
+    Remove-Item -LiteralPath (Join-Path $testDirectory 'MachineHistoryLogStateTest.java') -ErrorAction SilentlyContinue
     # Do not leave test Java files below the real project's main/java source root.
     Remove-Item -LiteralPath (Join-Path $testDirectory 'WorkOrderDetailTest.java') -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $testDirectory 'WorkOrderDetailMysqlTest.java') -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $testDirectory 'MaterialHistoryFormTest.java') -ErrorAction SilentlyContinue
 }

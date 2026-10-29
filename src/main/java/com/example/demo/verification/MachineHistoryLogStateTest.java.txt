@@ -1,0 +1,280 @@
+package com.example.demo.service;
+
+import com.example.demo.controller.*;
+import com.example.demo.dao.*;
+import com.example.demo.model.*;
+import com.example.demo.rowMapper.*;
+import java.sql.ResultSet;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.*;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+class MachineHistoryLogStateTest {
+
+    @Test void runningPercentageClipsAndSumsGreenIntervals() {
+        var start = java.time.LocalDateTime.of(2026, 10, 28, 8, 0);
+        var end = start.plusHours(8);
+        var events = List.of(
+                new ProductionFlowService.MachineEvent(start.minusHours(1), 2),
+                new ProductionFlowService.MachineEvent(start.plusHours(2), 3),
+                new ProductionFlowService.MachineEvent(start.plusHours(3), 2),
+                new ProductionFlowService.MachineEvent(start.plusHours(5), 0),
+                new ProductionFlowService.MachineEvent(start.plusHours(6), 1),
+                new ProductionFlowService.MachineEvent(start.plusHours(6), 2),
+                new ProductionFlowService.MachineEvent(end.plusHours(1), 3));
+        assertEquals(new java.math.BigDecimal("75.00"), ProductionFlowService.runningPercentage(start, end, events));
+        assertEquals(new java.math.BigDecimal("0.00"), ProductionFlowService.runningPercentage(start, end, List.of()));
+        assertEquals(java.math.BigDecimal.ZERO, ProductionFlowService.runningPercentage(start, start, events));
+        assertEquals(new java.math.BigDecimal("25.00"), ProductionFlowService.runningPercentage(start, end,
+                List.of(new ProductionFlowService.MachineEvent(start.plusHours(2), 2),
+                        new ProductionFlowService.MachineEvent(start.plusHours(4), null))));
+        assertEquals(new java.math.BigDecimal("100.00"), ProductionFlowService.runningPercentage(start, end,
+                List.of(new ProductionFlowService.MachineEvent(start, 2))));
+    }
+
+    @Test void closeAutomaticallyRecordsTimeAndPreservesItOnReview() throws Exception {
+        for (boolean heading : new boolean[]{true, false}) {
+            for (boolean reclose : new boolean[]{false, true}) {
+                var jdbc = mock(NamedParameterJdbcTemplate.class);
+                var flow = new ProductionFlowService(jdbc);
+                org.springframework.test.util.ReflectionTestUtils.setField(flow, "firstArticleState",
+                        mock(WorkOrderFirstArticleStateService.class));
+                var start = java.time.LocalDateTime.now(WorkOrderDetailService.ZONE).minusHours(3);
+                var originalEnd = start.plusHours(2);
+                var row = new java.util.HashMap<String, Object>();
+                row.put("order_closed", reclose ? 2 : 0);
+                row.put("started_at", start);
+                if (reclose) {
+                    row.put("end_at", originalEnd);
+                    row.put("oee", new java.math.BigDecimal("75.00"));
+                }
+                row.put("work_order_code", 12);
+                row.put("machineId", 3);
+                when(jdbc.queryForList(anyString(), any(java.util.Map.class))).thenReturn(List.of(row));
+                when(jdbc.query(contains("FROM ("), any(java.util.Map.class),
+                        org.mockito.ArgumentMatchers.<RowMapper<ProductionFlowService.MachineEvent>>any()))
+                        .thenReturn(List.of(new ProductionFlowService.MachineEvent(start, 2)));
+                Object controller = heading
+                        ? new WorkOrderHeadingMachineController(mock(WorkOrderHeadingMachineService.class), flow)
+                        : new WorkOrderThreadingMachineController(mock(WorkOrderThreadingMachineService.class), flow);
+                var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+                var before = java.time.LocalDateTime.now(WorkOrderDetailService.ZONE);
+                mvc.perform(post("/" + (heading ? "workOrderHeadingMachine" : "workOrderThreadingMachine")
+                        + "/7/production/close").contentType("application/json")
+                        .content("{\"orderClosed\":1,\"materialLoss\":0,\"remainingMaterial\":0"
+                                + (reclose ? ",\"reviewer\":\"R\",\"approved\":true,\"opinion\":\"確認\"" : "") + "}"))
+                        .andExpect(status().isOk());
+                ArgumentCaptor<java.util.Map<String, Object>> params = ArgumentCaptor.forClass(java.util.Map.class);
+                verify(jdbc).update(startsWith("UPDATE mydb.work_order_"), params.capture());
+                var end = (java.time.LocalDateTime) params.getValue().get("end_at");
+                assertEquals(new java.math.BigDecimal(reclose ? "75.00" : "100.00"), params.getValue().get("oee"));
+                if (!reclose) {
+                    verify(jdbc).query(contains("FROM mydb." + (heading ? "head" : "thread") + "_machine_history_log"),
+                            argThat((java.util.Map<String, ?> p) -> p.get("machine").equals(3)
+                                    && p.get("start").equals(start) && p.get("end").equals(end)),
+                            org.mockito.ArgumentMatchers.<RowMapper<ProductionFlowService.MachineEvent>>any());
+                }
+                if (reclose) assertEquals(originalEnd, end);
+                else {
+                    assertFalse(end.isBefore(before));
+                    assertFalse(end.isAfter(java.time.LocalDateTime.now(WorkOrderDetailService.ZONE)));
+                }
+            }
+        }
+    }
+
+    @Test void productionFlowStoresStateForBothMachines() throws Exception {
+        for (boolean heading : new boolean[]{true, false}) {
+            for (String production : new String[]{"生產中", "換料", "換針", "目標產量設定", "目標產量修改", "等待", "待料", "待單", "待沖模", "待維修", "待調車", "無法續做", "模具/牙板異常", "盤元異常換料續做"}) {
+            for (String stateJson : new String[]{",\"state\":0", "", ",\"state\":null"}) {
+                NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+                ProductionFlowService flow = new ProductionFlowService(jdbc);
+                org.springframework.test.util.ReflectionTestUtils.setField(flow, "firstArticleState",
+                        mock(WorkOrderFirstArticleStateService.class));
+                java.util.Map<String, Object> row = new java.util.HashMap<>();
+                row.put("order_closed", 0);
+                row.put("started_at", java.time.LocalDateTime.of(2026, 10, 28, 8, 0));
+                row.put("work_order_code", 12);
+                row.put("machineId", 3);
+                when(jdbc.queryForList(anyString(), any(java.util.Map.class))).thenReturn(List.of(row));
+                Object controller = heading
+                        ? new WorkOrderHeadingMachineController(mock(WorkOrderHeadingMachineService.class), flow)
+                        : new WorkOrderThreadingMachineController(mock(WorkOrderThreadingMachineService.class), flow);
+                MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
+                String resource = heading ? "workOrderHeadingMachine" : "workOrderThreadingMachine";
+                mvc.perform(post("/" + resource + "/7/production/status").contentType("application/json")
+                        .content("{\"productionStatus\":\"" + production + "\",\"reason\":\"模具損壞\"" + stateJson
+                                + (production.startsWith("目標產量") ? ",\"targetQuantity\":100" : "") + "}"))
+                        .andExpect(status().isOk());
+                ArgumentCaptor<java.util.Map<String, Object>> params = ArgumentCaptor.forClass(java.util.Map.class);
+                String table = heading ? "head_machine_history_log" : "thread_machine_history_log";
+                verify(jdbc).update(eq("INSERT INTO mydb." + table
+                        + " (title, `time`, machine_id, log, state) VALUES (:title,:eventTime,:machine,:log,:state)"),
+                        params.capture());
+                assertTrue(params.getValue().containsKey("state"));
+                assertEquals("生產中".equals(production) ? 2 : 3, params.getValue().get("state"));
+                assertEquals(production, params.getValue().get("title"));
+                assertEquals("模具損壞", params.getValue().get("log"));
+                assertEquals(3, params.getValue().get("machine"));
+            }
+            }
+        }
+    }
+
+    @Test void closeWritesLabelAndRunningStateForBothMachines() throws Exception {
+        for (boolean heading : new boolean[]{true, false}) {
+            for (int closeType : new int[]{1, 2}) {
+                for (boolean reclose : new boolean[]{false, true}) {
+                    var jdbc = mock(NamedParameterJdbcTemplate.class);
+                    var flow = new ProductionFlowService(jdbc);
+                    org.springframework.test.util.ReflectionTestUtils.setField(flow, "firstArticleState",
+                            mock(WorkOrderFirstArticleStateService.class));
+                    var row = new java.util.HashMap<String, Object>();
+                    row.put("order_closed", reclose ? 2 : 0);
+                    row.put("started_at", java.time.LocalDateTime.of(2026, 10, 28, 8, 0));
+                    row.put("work_order_code", 12);
+                    row.put("machineId", 3);
+                    row.put("production_status", "待維修");
+                    when(jdbc.queryForList(anyString(), any(java.util.Map.class))).thenReturn(List.of(row));
+                    Object controller = heading
+                            ? new WorkOrderHeadingMachineController(mock(WorkOrderHeadingMachineService.class), flow)
+                            : new WorkOrderThreadingMachineController(mock(WorkOrderThreadingMachineService.class), flow);
+                    var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+                    String resource = heading ? "workOrderHeadingMachine" : "workOrderThreadingMachine";
+                    mvc.perform(post("/" + resource + "/7/production/close").contentType("application/json")
+                            .content("{\"orderClosed\":" + closeType
+                                    + ",\"endAt\":\"2026-10-29T08:00:00\",\"materialLoss\":0,\"remainingMaterial\":0,"
+                                    + "\"reason\":\"測試原因\",\"remark\":\"測試備註\",\"state\":3"
+                                    + (reclose ? ",\"reviewer\":\"reviewer\",\"approved\":true,\"opinion\":\"改判\"" : "") + "}"))
+                            .andExpect(status().isOk());
+                    ArgumentCaptor<java.util.Map<String, Object>> params = ArgumentCaptor.forClass(java.util.Map.class);
+                    verify(jdbc).update(contains("INSERT INTO mydb." + (heading ? "head" : "thread") + "_machine_history_log"), params.capture());
+                    assertEquals(closeType == 1 ? "正常結單" : "異常結單", params.getValue().get("log"));
+                    assertEquals(2, params.getValue().get("state"));
+                    assertEquals("待維修", params.getValue().get("title"));
+                }
+            }
+        }
+    }
+
+    @Test void headStateApi() throws Exception {
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new HeadMachineHistoryLogController(
+                new HeadMachineHistoryLogService(new HeadMachineHistoryLogDao(jdbc)))).build();
+        when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+        mvc.perform(post("/headMachineHistoryLog/addHeadMachineHistoryLog").contentType("application/json")
+                .content("{\"machineId\":3,\"state\":2}"))
+                .andExpect(status().isCreated());
+        ArgumentCaptor<SqlParameterSource> params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).update(contains("log, state)"), params.capture());
+        assertEquals(2, params.getValue().getValue("state"));
+        for (int state : new int[]{0, 1, 2, 3}) {
+            mvc.perform(put("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json")
+                    .content("{\"machineId\":3,\"time\":\"2026-10-28T08:00:00\",\"state\":" + state + "}"))
+                    .andExpect(status().isOk());
+        }
+        verify(jdbc, times(4)).update(contains("SET title = :title, `time` = :time"), params.capture());
+        assertNull(params.getValue().getValue("title"));
+        assertNull(params.getValue().getValue("log"));
+        for (String invalid : new String[]{"-1", "4", "\"running\"", "\"\"", "\"2\"", "2.5", "true"}) {
+            String body = "{\"machineId\":3,\"time\":\"2026-10-28T08:00:00\",\"state\":" + invalid + "}";
+            mvc.perform(post("/headMachineHistoryLog/addHeadMachineHistoryLog").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+            mvc.perform(patch("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+            mvc.perform(put("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+        }
+        mvc.perform(put("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json").content("{\"state\":2}"))
+                .andExpect(status().isBadRequest());
+        clearInvocations(jdbc);
+        mvc.perform(patch("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json")
+                .content("{\"state\":3}"))
+                .andExpect(status().isOk());
+        verify(jdbc).update(eq("UPDATE mydb.head_machine_history_log SET state = :state WHERE id = :id"), params.capture());
+        assertEquals(3, params.getValue().getValue("state"));
+        assertEquals(7, params.getValue().getValue("id"));
+        assertFalse(params.getValue().hasValue("title"));
+        mvc.perform(patch("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json")
+                .content("{}" )).andExpect(status().isBadRequest());
+        when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(0);
+        mvc.perform(patch("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json")
+                .content("{\"state\":3}" )).andExpect(status().isNotFound());
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.getObject("state", Integer.class)).thenReturn(2);
+        HeadMachineHistoryLog row = new HeadMachineHistoryLogRowMapper().mapRow(rs, 0);
+        assertEquals(2, row.getState());
+        when(jdbc.query(anyString(), any(java.util.Map.class), any(RowMapper.class))).thenReturn(List.of(row));
+        when(jdbc.query(anyString(), any(RowMapper.class))).thenReturn(List.of(row));
+        mvc.perform(get("/headMachineHistoryLog/getHeadMachineHistoryLog/7"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.state").value(2));
+        mvc.perform(get("/headMachineHistoryLog/getHeadMachineHistoryLog"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].state").value(2));
+        mvc.perform(get("/headMachineHistoryLog/getHeadMachineHistoryLogByMachine?machineId=3"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].state").value(2));
+        mvc.perform(patch("/headMachineHistoryLog/updateHeadMachineHistoryLog/7").contentType("application/json")
+                .content("{\"state\":2}" )).andExpect(status().isOk());
+    }
+
+    @Test void threadStateApi() throws Exception {
+        NamedParameterJdbcTemplate jdbc = mock(NamedParameterJdbcTemplate.class);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ThreadMachineHistoryLogController(
+                new ThreadMachineHistoryLogService(new ThreadMachineHistoryLogDao(jdbc)))).build();
+        when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(1);
+        mvc.perform(post("/threadMachineHistoryLog/addThreadMachineHistoryLog").contentType("application/json")
+                .content("{\"machineId\":3,\"state\":2}"))
+                .andExpect(status().isCreated());
+        ArgumentCaptor<SqlParameterSource> params = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbc).update(contains("log, state)"), params.capture());
+        assertEquals(2, params.getValue().getValue("state"));
+        for (int state : new int[]{0, 1, 2, 3}) {
+            mvc.perform(put("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json")
+                    .content("{\"machineId\":3,\"time\":\"2026-10-28T08:00:00\",\"state\":" + state + "}"))
+                    .andExpect(status().isOk());
+        }
+        verify(jdbc, times(4)).update(contains("SET title = :title, `time` = :time"), params.capture());
+        assertNull(params.getValue().getValue("title"));
+        assertNull(params.getValue().getValue("log"));
+        for (String invalid : new String[]{"-1", "4", "\"running\"", "\"\"", "\"2\"", "2.5", "true"}) {
+            String body = "{\"machineId\":3,\"time\":\"2026-10-28T08:00:00\",\"state\":" + invalid + "}";
+            mvc.perform(post("/threadMachineHistoryLog/addThreadMachineHistoryLog").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+            mvc.perform(patch("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+            mvc.perform(put("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json").content(body)).andExpect(status().isBadRequest());
+        }
+        mvc.perform(put("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json").content("{\"state\":2}"))
+                .andExpect(status().isBadRequest());
+        clearInvocations(jdbc);
+        mvc.perform(patch("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json")
+                .content("{\"state\":3}"))
+                .andExpect(status().isOk());
+        verify(jdbc).update(eq("UPDATE mydb.thread_machine_history_log SET state = :state WHERE id = :id"), params.capture());
+        assertEquals(3, params.getValue().getValue("state"));
+        assertEquals(7, params.getValue().getValue("id"));
+        assertFalse(params.getValue().hasValue("title"));
+        mvc.perform(patch("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json")
+                .content("{}" )).andExpect(status().isBadRequest());
+        when(jdbc.update(anyString(), any(SqlParameterSource.class))).thenReturn(0);
+        mvc.perform(patch("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json")
+                .content("{\"state\":3}" )).andExpect(status().isNotFound());
+        ResultSet rs = mock(ResultSet.class);
+        when(rs.getObject("state", Integer.class)).thenReturn(2);
+        ThreadMachineHistoryLog row = new ThreadMachineHistoryLogRowMapper().mapRow(rs, 0);
+        assertEquals(2, row.getState());
+        when(jdbc.query(anyString(), any(java.util.Map.class), any(RowMapper.class))).thenReturn(List.of(row));
+        when(jdbc.query(anyString(), any(RowMapper.class))).thenReturn(List.of(row));
+        mvc.perform(get("/threadMachineHistoryLog/getThreadMachineHistoryLog/7"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.state").value(2));
+        mvc.perform(get("/threadMachineHistoryLog/getThreadMachineHistoryLog"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].state").value(2));
+        mvc.perform(get("/threadMachineHistoryLog/getThreadMachineHistoryLogByMachine?machineId=3"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].state").value(2));
+        mvc.perform(patch("/threadMachineHistoryLog/updateThreadMachineHistoryLog/7").contentType("application/json")
+                .content("{\"state\":2}" )).andExpect(status().isOk());
+    }
+}
+

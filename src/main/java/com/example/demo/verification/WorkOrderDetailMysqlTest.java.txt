@@ -111,7 +111,9 @@ class WorkOrderDetailMysqlTest {
         var production=new ProductionFlowService(named);ReflectionTestUtils.setField(production,"firstArticleState",commands);
         tx.execute(s->{production.startProduction(ProductionFlowService.Process.HEADING,2);return null;});
         command("rerun",new WorkOrderDetailCommandRequest("重新檢驗",null));
-        assertThrows(ResponseStatusException.class,()->tx.execute(s->{production.startProduction(ProductionFlowService.Process.HEADING,2);return null;}));
+        tx.execute(s->{production.startProduction(ProductionFlowService.Process.HEADING,2);return null;});
+        assertEquals("生產中",jdbc.queryForObject("SELECT production_status FROM mydb.work_order_heading_machine WHERE id=2",String.class));
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM mydb.history_log WHERE title='生產流程－未完成首件放行'",Integer.class));
     }
     @Test void additionalProductionPersistsAndCannotOverrideRerun() {
         command("exemption",new WorkOrderDetailCommandRequest("其他製程",null));

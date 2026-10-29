@@ -1,0 +1,114 @@
+package com.example.demo.service;
+
+import com.sun.net.httpserver.HttpServer;
+import java.math.BigDecimal;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
+import static com.example.demo.service.HmiCommunicationService.MachineType.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+class HmiCommunicationServiceTest {
+    HttpServer server;
+    String url;
+    volatile int status = 204;
+    volatile long delay;
+    LinkedBlockingQueue<String> requests = new LinkedBlockingQueue<>();
+
+    @BeforeEach void start() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/target", exchange -> {
+            requests.add(exchange.getRequestMethod() + "|" + exchange.getRequestHeaders().getFirst("Content-Type")
+                    + "|" + new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            try {
+                if (delay > 0) Thread.sleep(delay);
+                exchange.sendResponseHeaders(status, -1);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        url = "http://127.0.0.1:" + server.getAddress().getPort() + "/target";
+    }
+
+    @AfterEach void stop() { server.stop(0); }
+
+    @Test void sendsMachineIdentityAndExactQuantityOverHttp() throws Exception {
+        var service = new HmiCommunicationService(url, 1000, 1000);
+        service.setTargetQuantity(HEADING, "H-001", new BigDecimal("12345.125"));
+        String request = requests.poll(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(request.startsWith("POST|application/json|"));
+        assertTrue(request.contains("\"machineType\":\"HEADING\""));
+        assertTrue(request.contains("\"machineCode\":\"H-001\""));
+        assertTrue(request.contains("\"targetQuantity\":12345.125"));
+        service.setTargetQuantity(THREADING, "T-001", BigDecimal.ZERO);
+        assertTrue(requests.poll(1, TimeUnit.SECONDS).contains("\"machineType\":\"THREADING\""));
+    }
+
+    @Test void rejectsNonSuccessIncludingRedirects() {
+        var service = new HmiCommunicationService(url, 1000, 1000);
+        for (int code : new int[] {302, 400, 500}) {
+            status = code;
+            var ex = assertThrows(ResponseStatusException.class,
+                    () -> service.setTargetQuantity(HEADING, "H-001", BigDecimal.TEN));
+            assertEquals(502, ex.getStatusCode().value());
+        }
+        assertEquals(3, requests.size());
+    }
+
+    @Test void timeoutDoesNotRetryOrReportSuccess() {
+        delay = 300;
+        var service = new HmiCommunicationService(url, 1000, 100);
+        var ex = assertThrows(ResponseStatusException.class,
+                () -> service.setTargetQuantity(HEADING, "H-001", BigDecimal.TEN));
+        assertEquals(502, ex.getStatusCode().value());
+        assertTrue(requests.size() <= 1);
+    }
+
+    @Test void connectionFailureIsReported() {
+        server.stop(0);
+        var service = new HmiCommunicationService(url, 100, 100);
+        var ex = assertThrows(ResponseStatusException.class,
+                () -> service.setTargetQuantity(HEADING, "H-001", BigDecimal.TEN));
+        assertEquals(502, ex.getStatusCode().value());
+    }
+
+    @Test void missingEndpointIsExplicitAndDoesNotContactHmi() {
+        var service = new HmiCommunicationService("", 1000, 1000);
+        var ex = assertThrows(ResponseStatusException.class,
+                () -> service.setTargetQuantity(HEADING, "H-001", BigDecimal.TEN));
+        assertEquals(503, ex.getStatusCode().value());
+        assertTrue(requests.isEmpty());
+    }
+
+    @Test void invalidInputDoesNotContactHmi() {
+        var service = new HmiCommunicationService(url, 1000, 1000);
+        Runnable[] invalidCalls = {
+            () -> service.setTargetQuantity(null, "H-001", BigDecimal.TEN),
+            () -> service.setTargetQuantity(HEADING, null, BigDecimal.TEN),
+            () -> service.setTargetQuantity(HEADING, "  ", BigDecimal.TEN),
+            () -> service.setTargetQuantity(HEADING, "H-001", null),
+            () -> service.setTargetQuantity(HEADING, "H-001", new BigDecimal("-1"))
+        };
+        for (Runnable call : invalidCalls) {
+            assertEquals(400, assertThrows(ResponseStatusException.class, call::run).getStatusCode().value());
+        }
+        assertTrue(requests.isEmpty());
+    }
+
+    @Test void invalidConfigurationFailsEarly() {
+        for (String value : new String[] {"/relative", "ftp://host/target", "http://user:pass@host/target", "http://host/target#fragment"}) {
+            assertThrows(IllegalArgumentException.class, () -> new HmiCommunicationService(value, 100, 100));
+        }
+        assertThrows(IllegalArgumentException.class, () -> new HmiCommunicationService(url, 0, 100));
+        assertThrows(IllegalArgumentException.class, () -> new HmiCommunicationService(url, 100, -1));
+    }
+}
